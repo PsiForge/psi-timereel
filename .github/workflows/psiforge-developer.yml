@@ -1,0 +1,101 @@
+# Managed by PsiForge. Started by the orchestrator for one approved ticket; opens a pull request.
+# The job only pushes a branch and reports on the ticket; the orchestrator opens the pull request
+# (pull requests opened with the job's own token would not start CI).
+# Security: the agent step gets no GitHub credentials (checkout does not keep them) and cannot change
+# .github/workflows; CI changes are proposed under .psiforge/workflows/ and activated only after a human merges.
+name: PsiForge developer
+run-name: "PsiForge developer: #${{ inputs.issue }} (attempt ${{ inputs.attempt }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue: { description: Ticket issue number, required: true, type: string }
+      attempt: { description: Attempt number, required: true, type: string }
+      model: { description: Claude model, required: true, type: string }
+      effort: { description: Effort level, required: true, type: string }
+      max_budget_usd: { description: Hard spend limit for this run, required: true, type: string }
+      prompt: { description: Instructions for the agent, required: true, type: string }
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: psiforge-developer-${{ inputs.issue }}
+
+jobs:
+  develop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ISSUE: ${{ inputs.issue }}
+      ATTEMPT: ${{ inputs.attempt }}
+      BRANCH: psiforge/ticket-${{ inputs.issue }}-a${{ inputs.attempt }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: Run the developer agent
+        id: agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODEL: ${{ inputs.model }}
+          EFFORT: ${{ inputs.effort }}
+          MAX_BUDGET: ${{ inputs.max_budget_usd }}
+          PROMPT: ${{ inputs.prompt }}
+        run: |
+          git checkout -b "$BRANCH"
+          mkdir -p .psiforge
+          set +e
+          npx -y @anthropic-ai/claude-code@2.1.322 -p "$PROMPT" \
+            --model "$MODEL" --effort "$EFFORT" --max-budget-usd "$MAX_BUDGET" \
+            --output-format json --dangerously-skip-permissions > "$RUNNER_TEMP/result.json"
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          jq -r '"cost=\(.total_cost_usd // 0)", "error=\(.is_error // true)", "turns=\(.num_turns // 0)"' \
+            "$RUNNER_TEMP/result.json" >> "$GITHUB_OUTPUT" || echo "cost=0" >> "$GITHUB_OUTPUT"
+
+      - name: Keep workflow changes as proposals
+        run: |
+          changed="$(git status --porcelain -uall -- .github/workflows | awk '{print $2}')"
+          for f in $changed; do
+            if [ -f "$f" ]; then mkdir -p .psiforge/workflows && cp "$f" ".psiforge/workflows/$(basename "$f")"; fi
+          done
+          git checkout -- .github/workflows 2>/dev/null || true
+          git clean -fdq -- .github/workflows
+
+      - name: Commit and push the branch
+        id: push
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$(git status --porcelain -- . ':!.psiforge/pr.md')" ]; then echo "made=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          [ -f .psiforge/pr.md ] && mv .psiforge/pr.md "$RUNNER_TEMP/pr.md"
+          git config user.name "psiforge-developer"
+          git config user.email "psiforge-developer@users.noreply.github.com"
+          git add -A
+          git commit -q -m "$(gh issue view "$ISSUE" --json title --jq .title)" -m "Closes #$ISSUE"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          echo "made=true" >> "$GITHUB_OUTPUT"
+
+      - name: Report on the ticket
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COST: ${{ steps.agent.outputs.cost }}
+          MADE: ${{ steps.push.outputs.made }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          summary="$( [ -f "$RUNNER_TEMP/pr.md" ] && cat "$RUNNER_TEMP/pr.md" || echo "No summary from the agent." )"
+          if [ "$MADE" = "true" ]; then head="ψ Developer attempt $ATTEMPT pushed \`$BRANCH\` (\$${COST:-0}). The orchestrator opens the pull request."
+          else head="ψ Developer attempt $ATTEMPT made no changes or failed (\$${COST:-0}). Log: $RUN"; fi
+          printf '%s\n\n<details><summary>Summary</summary>\n\n%s\n\n</details>\n\n<!-- psiforge:dev-result attempt=%s usd=%s made=%s branch=%s -->\n' \
+            "$head" "$summary" "$ATTEMPT" "${COST:-0}" "${MADE:-false}" "$BRANCH" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/comment.md"
+          [ "$MADE" = "true" ]

@@ -1,6 +1,13 @@
 [advisories]
 version = 2
 yanked = "deny"
+# Both are "unmaintained" notices (not vulnerabilities) for proc-macro crates
+# that `age` pulls in only for its translated messages (i18n-embed). They run
+# at build time and are not linked into any TimeReel binary.
+ignore = [
+  { id = "RUSTSEC-2026-0374", reason = "basic-toml: build-time proc-macro via age's i18n-embed" },
+  { id = "RUSTSEC-2026-0173", reason = "proc-macro-error2: build-time proc-macro via age's i18n-embed" },
+]
 
 [licenses]
 version = 2

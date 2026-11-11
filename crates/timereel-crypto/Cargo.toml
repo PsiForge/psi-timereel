@@ -1,6 +1,6 @@
 [package]
 name = "timereel-crypto"
-description = "TimeReel crypto: key file with password and recovery slots"
+description = "TimeReel crypto: key file and sealed capture container"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -26,4 +26,5 @@ thiserror = "2.0.21"
 zeroize = "1.9.1"
 
 [dev-dependencies]
+proptest = "1"
 tempfile = "3.27.0"

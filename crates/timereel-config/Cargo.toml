@@ -1,6 +1,6 @@
 [package]
 name = "timereel-config"
-description = "TimeReel config crate (placeholder)"
+description = "TimeReel config: XDG paths, config.toml schema, validation and atomic locked updates"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,12 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+fs4 = "1.1.0"
+serde = { version = "1.0.229", features = ["derive"] }
+thiserror = "2.0.21"
+toml = "1.0.7"
+
+[dev-dependencies]
+tempfile = "3.27.0"

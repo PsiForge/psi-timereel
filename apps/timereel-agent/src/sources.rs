@@ -1,10 +1,11 @@
 //! The real capture sources. X11 sessions use the X11 sources of
-//! `timereel-capture`. Until the Wayland and logind sources exist (later
-//! tickets) those sessions report as not supported.
+//! `timereel-capture`, and Wayland sessions use the portal source. Until the
+//! logind source exists (a later ticket) the lock source says "unlocked".
 
+use timereel_capture::wayland::TokenStore;
 use timereel_capture::{
-    ActiveWindow, ActiveWindowSource, CaptureError, LockSource, ScreenSource, Session, X11Screen,
-    X11Window,
+    ActiveWindow, ActiveWindowSource, CaptureError, LockSource, ScreenSource, ScreencastPortal,
+    Session, WaylandScreen, X11Screen, X11Window,
 };
 use timereel_image::Frame;
 
@@ -12,22 +13,37 @@ use timereel_image::Frame;
 ///
 /// * X11: the real X11 sources, which connect at the first capture and again
 ///   after a lost connection.
-/// * Wayland: not yet supported (every capture is `NoDisplay`, with a log
-///   line saying why, once; the app is unknown).
+/// * Wayland: the ScreenCast portal source (ADR 0008); the active app is
+///   unknown until the GNOME extension client exists.
 /// * No session: every capture is `NoDisplay`.
 pub fn screen_and_window(session: Session) -> (Box<dyn ScreenSource>, Box<dyn ActiveWindowSource>) {
     match session {
         Session::X11 => (Box::new(X11Screen::new()), Box::new(X11Window::new())),
-        Session::Wayland => (
-            Box::new(UnsupportedScreen::new(
-                "Wayland capture is not yet supported",
-            )),
-            Box::new(UnsupportedWindow),
-        ),
+        Session::Wayland => (wayland_screen(), Box::new(UnsupportedWindow)),
         Session::None => (
             Box::new(UnsupportedScreen::new("no graphical session found")),
             Box::new(UnsupportedWindow),
         ),
+    }
+}
+
+/// The Wayland screen source: the ScreenCast portal with the restore token in
+/// the state directory. If that cannot be set up (no state directory, no
+/// runtime) the source reports `NoDisplay` and logs why, once.
+fn wayland_screen() -> Box<dyn ScreenSource> {
+    let tokens = match TokenStore::at_default_location() {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!(error = %e, "no state directory for the portal restore token");
+            return Box::new(UnsupportedScreen::new("no state directory"));
+        }
+    };
+    match ScreencastPortal::new() {
+        Ok(portal) => Box::new(WaylandScreen::new(portal, tokens)),
+        Err(e) => {
+            tracing::error!(error = %e, "could not start the portal client");
+            Box::new(UnsupportedScreen::new("portal client failed to start"))
+        }
     }
 }
 
@@ -104,12 +120,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wayland_and_no_session_are_not_captured() {
-        for session in [Session::Wayland, Session::None] {
-            let (screen, window) = screen_and_window(session);
-            assert_eq!(screen.capture().err(), Some(CaptureError::NoDisplay));
-            assert_eq!(window.active_window(), ActiveWindow::Unknown);
-        }
+    fn no_session_is_not_captured() {
+        let (screen, window) = screen_and_window(Session::None);
+        assert_eq!(screen.capture().err(), Some(CaptureError::NoDisplay));
+        assert_eq!(window.active_window(), ActiveWindow::Unknown);
+    }
+
+    #[test]
+    fn a_wayland_session_builds_its_sources_without_talking_to_the_portal() {
+        // Construction must not need a bus or a portal; the active app is
+        // unknown until the GNOME extension client exists.
+        let (_screen, window) = screen_and_window(Session::Wayland);
+        assert_eq!(window.active_window(), ActiveWindow::Unknown);
     }
 
     #[test]

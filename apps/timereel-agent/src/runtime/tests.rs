@@ -219,6 +219,20 @@ fn pause_cancels_the_pending_capture_and_resume_reschedules() {
 }
 
 #[test]
+fn retry_permission_tells_the_source_and_captures_at_once() {
+    run(async {
+        let env = Env::new(true).await;
+        let agent = start(&env);
+        assert_eq!(agent.screen.retries(), 0);
+        // No time passes: the next tick is a full interval away.
+        agent.handle.retry_permission().await.unwrap();
+        assert_eq!(agent.screen.retries(), 1);
+        agent.until("capture", |a| a.screen.calls() == 1).await;
+        agent.stop().await;
+    });
+}
+
+#[test]
 fn the_config_is_read_again_at_every_tick() {
     run(async {
         let env = Env::new(true).await;

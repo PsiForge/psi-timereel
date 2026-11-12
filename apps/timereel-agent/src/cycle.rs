@@ -99,6 +99,8 @@ pub enum ErrorKind {
     NoPermission,
     /// Screen capture portal error.
     Portal,
+    /// The ScreenCast portal is older than version 4.
+    PortalTooOld,
     /// The disk is full (ENOSPC).
     DiskFull,
     /// Encryption failed.
@@ -116,6 +118,7 @@ impl ErrorKind {
             ErrorKind::NoDisplay => "NoDisplay",
             ErrorKind::NoPermission => "NoPermission",
             ErrorKind::Portal => "Portal",
+            ErrorKind::PortalTooOld => "PortalTooOld",
             ErrorKind::DiskFull => "DiskFull",
             ErrorKind::Encryption => "Encryption",
             ErrorKind::Storage => "Storage",
@@ -129,6 +132,9 @@ impl ErrorKind {
             ErrorKind::NoDisplay => "No display found",
             ErrorKind::NoPermission => "Screen capture permission denied",
             ErrorKind::Portal => "Screen capture portal error",
+            ErrorKind::PortalTooOld => {
+                "Screen capture portal is too old: version 4 or later is needed"
+            }
             ErrorKind::DiskFull => "Disk full",
             ErrorKind::Encryption => "Encryption failed",
             ErrorKind::Storage => "Could not save the screenshot",
@@ -152,6 +158,7 @@ impl From<CaptureError> for ErrorKind {
             CaptureError::NoDisplay => ErrorKind::NoDisplay,
             CaptureError::NoPermission => ErrorKind::NoPermission,
             CaptureError::Portal => ErrorKind::Portal,
+            CaptureError::PortalTooOld => ErrorKind::PortalTooOld,
         }
     }
 }
@@ -307,6 +314,12 @@ impl CycleRunner {
         } else if matches!(self.state, AgentState::Paused | AgentState::NotSetUp) {
             self.set_state(AgentState::Recording, "");
         }
+    }
+
+    /// Tells the screen source that the user asked for screen capture
+    /// permission again (`RetryPermission`). The caller runs a cycle next.
+    pub fn retry_permission(&mut self) {
+        self.screen.retry_permission();
     }
 
     fn set_state(&mut self, state: AgentState, reason: &str) {

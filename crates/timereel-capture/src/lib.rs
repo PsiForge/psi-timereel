@@ -6,9 +6,10 @@
 //! * [`ActiveWindowSource`]: says which app and window has the focus;
 //! * [`LockSource`]: says whether the screen is locked.
 //!
-//! The X11 implementations are in [`x11`]; the Wayland portal, the GNOME
-//! extension and logind come in later tickets. The [`fake`] module has scriptable fakes so
-//! the agent's skip and error logic can be tested without a display.
+//! The X11 implementations are in [`x11`] and the Wayland portal one is in
+//! [`wayland`]; the GNOME extension and logind come in later tickets. The
+//! [`fake`] module has scriptable fakes so the agent's skip and error logic can
+//! be tested without a display.
 //!
 //! Error values and their `Display` text never contain window titles or app
 //! names, so they are safe to log.
@@ -17,9 +18,11 @@ pub mod band;
 pub mod fake;
 pub mod lock;
 mod session;
+pub mod wayland;
 pub mod x11;
 
 pub use session::{detect_session, detect_session_with, Session};
+pub use wayland::{ScreencastPortal, WaylandScreen};
 pub use x11::{X11Screen, X11Window};
 
 use timereel_image::Frame;
@@ -53,6 +56,10 @@ pub enum CaptureError {
     /// The screen capture portal failed.
     #[error("portal error")]
     Portal,
+    /// The ScreenCast portal is older than version 4, so restore tokens do
+    /// not work.
+    #[error("screen capture portal is older than version 4")]
+    PortalTooOld,
 }
 
 /// Grabs the screen.
@@ -66,6 +73,11 @@ pub trait ScreenSource {
     /// uses it to keep its memory small; others ignore it. The default does
     /// nothing.
     fn set_target_width(&self, _width: u32) {}
+
+    /// Asks the source to ask the user for screen capture permission again
+    /// after it was denied (the `RetryPermission` D-Bus method). A source
+    /// without a permission step does nothing, which is the default.
+    fn retry_permission(&self) {}
 }
 
 /// Reads the focused window.
@@ -91,6 +103,10 @@ impl<T: ScreenSource + ?Sized> ScreenSource for std::sync::Arc<T> {
 
     fn set_target_width(&self, width: u32) {
         (**self).set_target_width(width);
+    }
+
+    fn retry_permission(&self) {
+        (**self).retry_permission();
     }
 }
 

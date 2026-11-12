@@ -1,6 +1,6 @@
 [package]
 name = "timereel-capture"
-description = "TimeReel capture crate (placeholder)"
+description = "TimeReel capture sources: screen, active window and lock traits, with fakes for tests"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,7 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+thiserror = "2.0.21"
+timereel-image = { path = "../timereel-image" }

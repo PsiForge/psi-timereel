@@ -25,3 +25,15 @@ cargo deny check                                           # cargo install cargo
 ```
 
 CI (`.github/workflows/ci.yml`) runs the format, clippy, test and cargo-deny steps on every push and pull request.
+
+### The agent
+
+`timereel-agent` runs as a systemd user service (`packaging/timereel-agent.service`) and serves `org.timereel.Agent1` on the session bus. For now its real screen and lock sources report an unsupported session (X11 and Wayland capture come in later tickets), so it only shows its state. Try it:
+
+```
+cargo build -p timereel-agent
+dbus-run-session -- bash -c 'target/debug/timereel-agent & sleep 1;
+  busctl --user get-property org.timereel.Agent1 /org/timereel/Agent1 org.timereel.Agent1 State'
+```
+
+The D-Bus integration tests (`apps/timereel-agent/tests/dbus.rs`) start their own private `dbus-daemon`, so plain `cargo test` works; CI runs them under `dbus-run-session`. Set `TIMEREEL_LOG=debug` for more log lines (the agent logs to the journal, or to stderr if there is no journal). To check the unit file: `systemd-analyze --user verify packaging/timereel-agent.service` (needs `timereel-agent` installed at `/usr/bin`).

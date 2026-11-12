@@ -294,6 +294,21 @@ impl CycleRunner {
         outcome
     }
 
+    /// Brings the state in line with a config that was just read or saved,
+    /// without waiting for the next tick: `paused` wins, then a missing public
+    /// key gives `not_set_up`, and a state that no longer applies
+    /// (`paused` or `not_set_up`) goes back to `recording`. An error state is
+    /// kept; only a successful capture clears it.
+    pub fn sync_with_config(&mut self, config: &Config) {
+        if config.paused {
+            self.set_state(AgentState::Paused, "");
+        } else if config.public_key.is_none() {
+            self.set_state(AgentState::NotSetUp, ErrorKind::NotSetUp.reason());
+        } else if matches!(self.state, AgentState::Paused | AgentState::NotSetUp) {
+            self.set_state(AgentState::Recording, "");
+        }
+    }
+
     fn set_state(&mut self, state: AgentState, reason: &str) {
         self.state = state;
         self.reason.clear();

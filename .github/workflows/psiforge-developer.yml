@@ -55,6 +55,7 @@ jobs:
           PROMPT: ${{ inputs.prompt }}
         run: |
           if [ "$REWORK" != "true" ]; then git checkout -b "$BRANCH"; fi
+          echo "base=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           mkdir -p .psiforge
           set +e
           npx -y @anthropic-ai/claude-code@2.1.322 -p "$PROMPT" \
@@ -66,12 +67,18 @@ jobs:
             "$RUNNER_TEMP/result.json" >> "$GITHUB_OUTPUT" || echo "cost=0" >> "$GITHUB_OUTPUT"
 
       - name: Keep workflow changes as proposals
+        env:
+          BASE: ${{ steps.agent.outputs.base }}
         run: |
-          changed="$(git status --porcelain -uall -- .github/workflows | awk '{print $2}')"
+          # The agent may have committed despite instructions: fold its commits into the working tree,
+          # so the job makes one commit and workflow edits can be moved out (the job token may not push them).
+          if [ "$(git rev-parse HEAD)" != "$BASE" ]; then git reset -q --soft "$BASE"; fi
+          changed="$( (git diff --name-only "$BASE" -- .github/workflows; git ls-files --others --exclude-standard -- .github/workflows) | sort -u)"
           for f in $changed; do
             if [ -f "$f" ]; then mkdir -p .psiforge/workflows && cp "$f" ".psiforge/workflows/$(basename "$f")"; fi
           done
-          git checkout -- .github/workflows 2>/dev/null || true
+          git reset -q -- .github/workflows
+          git checkout "$BASE" -- .github/workflows
           git clean -fdq -- .github/workflows
 
       - name: Commit and push the branch

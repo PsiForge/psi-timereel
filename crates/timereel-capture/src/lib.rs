@@ -6,15 +6,21 @@
 //! * [`ActiveWindowSource`]: says which app and window has the focus;
 //! * [`LockSource`]: says whether the screen is locked.
 //!
-//! Real implementations (X11, the Wayland portal, the GNOME extension,
-//! logind) come in later tickets. The [`fake`] module has scriptable fakes so
+//! The X11 implementations are in [`x11`]; the Wayland portal, the GNOME
+//! extension and logind come in later tickets. The [`fake`] module has scriptable fakes so
 //! the agent's skip and error logic can be tested without a display.
 //!
 //! Error values and their `Display` text never contain window titles or app
 //! names, so they are safe to log.
 
+pub mod band;
 pub mod fake;
 pub mod lock;
+mod session;
+pub mod x11;
+
+pub use session::{detect_session, detect_session_with, Session};
+pub use x11::{X11Screen, X11Window};
 
 use timereel_image::Frame;
 
@@ -54,6 +60,12 @@ pub trait ScreenSource {
     /// Captures every monitor once. Each [`Frame`] holds the pixels of one
     /// monitor and its position in the combined layout.
     fn capture(&self) -> Result<Vec<Frame>, CaptureError>;
+
+    /// Tells the source the width (in pixels) the combined layout will be
+    /// scaled to. A source that scales while it captures, like the X11 one,
+    /// uses it to keep its memory small; others ignore it. The default does
+    /// nothing.
+    fn set_target_width(&self, _width: u32) {}
 }
 
 /// Reads the focused window.
@@ -75,6 +87,10 @@ pub trait LockSource {
 impl<T: ScreenSource + ?Sized> ScreenSource for std::sync::Arc<T> {
     fn capture(&self) -> Result<Vec<Frame>, CaptureError> {
         (**self).capture()
+    }
+
+    fn set_target_width(&self, width: u32) {
+        (**self).set_target_width(width);
     }
 }
 

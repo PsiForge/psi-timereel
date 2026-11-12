@@ -5,7 +5,7 @@ use std::sync::Arc;
 use timereel_agent::clock::SystemClock;
 use timereel_agent::cycle::CycleRunner;
 use timereel_agent::runtime::Core;
-use timereel_agent::sources::{UnsupportedScreen, UnsupportedWindow};
+use timereel_agent::sources::screen_and_window;
 use timereel_agent::{logging, logind, service, sys};
 use timereel_capture::lock::DbusLockSource;
 use timereel_store::Store;
@@ -48,7 +48,7 @@ fn main() -> std::process::ExitCode {
 
 async fn run() -> Result<(), String> {
     let store = Store::at_default_location().map_err(|e| format!("no data directory: {e}"))?;
-    let session = zbus::Connection::session()
+    let bus = zbus::Connection::session()
         .await
         .map_err(|e| format!("cannot connect to the session bus: {e}"))?;
     // The system bus serves logind (suspend and lock detection). Without it
@@ -61,16 +61,14 @@ async fn run() -> Result<(), String> {
             None
         }
     };
-    let lock = DbusLockSource::start(system.clone(), Some(session.clone())).await;
-    let runner = CycleRunner::new(
-        Box::new(UnsupportedScreen::new()),
-        Box::new(UnsupportedWindow),
-        Box::new(lock),
-        Box::new(store.clone()),
-    );
+    let lock = DbusLockSource::start(system.clone(), Some(bus.clone())).await;
+    let session = timereel_capture::detect_session();
+    tracing::info!(session = ?session, "session detected");
+    let (screen, window) = screen_and_window(session);
+    let runner = CycleRunner::new(screen, window, Box::new(lock), Box::new(store.clone()));
     let (core, handle) = Core::new(Arc::new(SystemClock), runner, store);
 
-    service::serve(&session, handle.clone())
+    service::serve(&bus, handle.clone())
         .await
         .map_err(|e| format!("cannot serve {}: {e}", service::BUS_NAME))?;
 

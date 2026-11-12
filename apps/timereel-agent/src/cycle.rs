@@ -341,6 +341,7 @@ impl CycleRunner {
             return Outcome::Failed(ErrorKind::NotSetUp);
         };
 
+        self.screen.set_target_width(config.width_px);
         let frames = match self.screen.capture() {
             Ok(frames) => frames,
             Err(e) => return Outcome::Failed(e.into()),

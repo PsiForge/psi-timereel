@@ -37,5 +37,9 @@ jobs:
           sudo install -m 755 target/debug/timereel-agent /usr/bin/timereel-agent
           systemd-analyze --user verify packaging/timereel-agent.service
           sudo rm /usr/bin/timereel-agent
+      - name: Check the GNOME extension JavaScript
+        run: |
+          node --version
+          node --check --input-type=module < "extras/gnome-shell-extension/timereel-focus@timereel.org/extension.js"
       - name: Cargo deny
         run: cargo deny check

@@ -1,11 +1,12 @@
 //! The real capture sources. X11 sessions use the X11 sources of
-//! `timereel-capture`, and Wayland sessions use the portal source. Until the
+//! `timereel-capture`, and Wayland sessions use the portal source and the GNOME
+//! extension client for the active window. Until the
 //! logind source exists (a later ticket) the lock source says "unlocked".
 
 use timereel_capture::wayland::TokenStore;
 use timereel_capture::{
-    ActiveWindow, ActiveWindowSource, CaptureError, LockSource, ScreenSource, ScreencastPortal,
-    Session, WaylandScreen, X11Screen, X11Window,
+    ActiveWindow, ActiveWindowSource, CaptureError, GnomeWindow, LockSource, ScreenSource,
+    ScreencastPortal, Session, WaylandScreen, X11Screen, X11Window,
 };
 use timereel_image::Frame;
 
@@ -13,13 +14,14 @@ use timereel_image::Frame;
 ///
 /// * X11: the real X11 sources, which connect at the first capture and again
 ///   after a lost connection.
-/// * Wayland: the ScreenCast portal source (ADR 0008); the active app is
-///   unknown until the GNOME extension client exists.
+/// * Wayland: the ScreenCast portal source (ADR 0008) and the GNOME
+///   extension client for the active window (ADR 0009); the app is unknown
+///   where the extension is not running.
 /// * No session: every capture is `NoDisplay`.
 pub fn screen_and_window(session: Session) -> (Box<dyn ScreenSource>, Box<dyn ActiveWindowSource>) {
     match session {
         Session::X11 => (Box::new(X11Screen::new()), Box::new(X11Window::new())),
-        Session::Wayland => (wayland_screen(), Box::new(UnsupportedWindow)),
+        Session::Wayland => (wayland_screen(), Box::new(GnomeWindow::new())),
         Session::None => (
             Box::new(UnsupportedScreen::new("no graphical session found")),
             Box::new(UnsupportedWindow),
@@ -128,10 +130,8 @@ mod tests {
 
     #[test]
     fn a_wayland_session_builds_its_sources_without_talking_to_the_portal() {
-        // Construction must not need a bus or a portal; the active app is
-        // unknown until the GNOME extension client exists.
-        let (_screen, window) = screen_and_window(Session::Wayland);
-        assert_eq!(window.active_window(), ActiveWindow::Unknown);
+        // Construction must not need a bus, a portal or the extension.
+        let (_screen, _window) = screen_and_window(Session::Wayland);
     }
 
     #[test]

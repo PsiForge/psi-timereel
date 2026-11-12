@@ -505,3 +505,159 @@ fn the_screen_is_told_the_configured_width_before_each_capture() {
     );
     assert_eq!(*spy.widths.lock().unwrap(), vec![900, 1280]);
 }
+
+// ---- repeated app-unknown skips on Wayland ----
+
+fn wayland_runner(s: &Setup, window: FakeWindow) -> CycleRunner {
+    runner(s, window).warn_on_unknown_app(true)
+}
+
+fn at(n: i64) -> Now {
+    Now {
+        unix_ms: T0 + n * 1000,
+        ..NOW
+    }
+}
+
+#[test]
+fn three_unknown_skips_in_a_row_set_the_error_state() {
+    let s = setup();
+    let mut r = wayland_runner(&s, FakeWindow::always(ActiveWindow::Unknown));
+    for n in 0..2 {
+        assert_eq!(
+            r.run_once(&s.config, at(n)),
+            Outcome::Skipped(SkipReason::AppUnknown)
+        );
+        assert_eq!(r.state(), AgentState::Recording, "skip {}", n + 1);
+        assert_eq!(r.reason(), "");
+    }
+    assert_eq!(
+        r.run_once(&s.config, at(2)),
+        Outcome::Skipped(SkipReason::AppUnknown)
+    );
+    assert_eq!(r.state(), AgentState::Error);
+    assert_eq!(
+        r.reason(),
+        "Active app unknown: enable the TimeReel GNOME extension or allow capture when unknown"
+    );
+    // It stays while the app stays unknown.
+    r.run_once(&s.config, at(3));
+    assert_eq!(r.state(), AgentState::Error);
+    assert!(stored(&s).is_empty());
+}
+
+#[test]
+fn the_unknown_error_clears_after_the_next_capture() {
+    let s = setup();
+    let unknown = ActiveWindow::Unknown;
+    let known = ActiveWindow::Known {
+        app: "Firefox".into(),
+        title: "Inbox".into(),
+    };
+    let mut r = wayland_runner(
+        &s,
+        FakeWindow::sequence(vec![unknown.clone(), unknown.clone(), unknown, known]),
+    );
+    for n in 0..3 {
+        r.run_once(&s.config, at(n));
+    }
+    assert_eq!(r.state(), AgentState::Error);
+    assert!(matches!(r.run_once(&s.config, at(3)), Outcome::Captured(_)));
+    assert_eq!(r.state(), AgentState::Recording);
+    assert_eq!(r.reason(), "");
+}
+
+#[test]
+fn a_known_app_in_between_resets_the_streak() {
+    let s = setup();
+    let unknown = ActiveWindow::Unknown;
+    let known = ActiveWindow::Known {
+        app: "Firefox".into(),
+        title: String::new(),
+    };
+    let mut r = wayland_runner(
+        &s,
+        FakeWindow::sequence(vec![
+            unknown.clone(),
+            unknown.clone(),
+            known.clone(),
+            known, // the second look of the same cycle
+            unknown.clone(),
+            unknown,
+        ]),
+    );
+    for n in 0..5 {
+        r.run_once(&s.config, at(n));
+    }
+    // 2 skips, a capture, 2 skips: never three in a row.
+    assert_eq!(r.state(), AgentState::Recording);
+}
+
+#[test]
+fn locked_and_paused_skips_do_not_break_the_streak() {
+    let s = setup();
+    let lock = Arc::new(FakeLock::new(false));
+    let mut r = CycleRunner::new(
+        Box::new(FakeScreen::single_monitor()),
+        Box::new(FakeWindow::always(ActiveWindow::Unknown)),
+        Box::new(lock.clone()),
+        Box::new(Store::new(s.store.captures_dir().parent().unwrap())),
+    )
+    .warn_on_unknown_app(true);
+    r.run_once(&s.config, at(0));
+    r.run_once(&s.config, at(1));
+    lock.set_locked(true);
+    assert_eq!(
+        r.run_once(&s.config, at(2)),
+        Outcome::Skipped(SkipReason::Locked)
+    );
+    assert_eq!(r.state(), AgentState::Recording);
+    lock.set_locked(false);
+    r.run_once(&s.config, at(3));
+    assert_eq!(r.state(), AgentState::Error);
+}
+
+#[test]
+fn other_systems_do_not_raise_the_unknown_error() {
+    // X11 (the default): unknown skips stay quiet.
+    let s = setup();
+    let mut r = runner(&s, FakeWindow::always(ActiveWindow::Unknown));
+    for n in 0..5 {
+        r.run_once(&s.config, at(n));
+    }
+    assert_eq!(r.state(), AgentState::Recording);
+}
+
+#[test]
+fn allowing_unknown_apps_never_raises_the_unknown_error() {
+    let s = setup();
+    let mut config = s.config.clone();
+    config.capture_when_app_unknown = true;
+    let mut r = wayland_runner(&s, FakeWindow::always(ActiveWindow::Unknown));
+    for n in 0..4 {
+        assert!(matches!(r.run_once(&config, at(n)), Outcome::Captured(_)));
+    }
+    assert_eq!(r.state(), AgentState::Recording);
+}
+
+#[test]
+fn a_permission_state_is_not_replaced_by_the_unknown_error() {
+    let s = setup();
+    let denied = FakeScreen::failing(CaptureError::NoPermission);
+    let mut config = s.config.clone();
+    config.capture_when_app_unknown = true;
+    let mut r = runner_with(
+        &s,
+        FakeWindow::always(ActiveWindow::Unknown),
+        FakeLock::new(false),
+        denied,
+    )
+    .warn_on_unknown_app(true);
+    assert!(matches!(r.run_once(&config, at(0)), Outcome::Failed(_)));
+    assert_eq!(r.state(), AgentState::NeedsPermission);
+    // The user turns the safe default back on; unknown skips follow.
+    for n in 1..5 {
+        r.run_once(&s.config, at(n));
+    }
+    assert_eq!(r.state(), AgentState::NeedsPermission);
+}

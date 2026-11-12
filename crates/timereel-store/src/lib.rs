@@ -25,13 +25,18 @@
 //!   unknown names. It needs no key.
 //! * The readers check that the timestamp inside the metadata equals the file
 //!   name and that all parts belong to the same capture.
+//! * [`retention::run`] deletes captures older than the retention period, by
+//!   file name only, and never follows symlinks.
 //! * [`Store::cleanup_partials`] removes interrupted writes; the agent calls it
 //!   at start.
 
 mod error;
+pub mod retention;
 mod store;
 mod time;
 
+#[cfg(test)]
+mod retention_tests;
 #[cfg(test)]
 mod tests;
 

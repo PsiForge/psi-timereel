@@ -16,6 +16,7 @@
 
 pub mod band;
 pub mod fake;
+pub mod lock;
 mod session;
 pub mod wayland;
 pub mod x11;

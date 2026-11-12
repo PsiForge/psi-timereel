@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TimeReel tray
+Comment=Shows the TimeReel capture state and lets you pause it
+Exec=timereel-tray
+Icon=timereel
+Terminal=false
+NoDisplay=true
+Categories=Utility;
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=3

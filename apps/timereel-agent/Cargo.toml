@@ -17,8 +17,13 @@ timereel-crypto = { path = "../../crates/timereel-crypto" }
 timereel-image = { path = "../../crates/timereel-image" }
 timereel-store = { path = "../../crates/timereel-store" }
 tracing = "0.1"
+tracing-journald = "0.3"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std", "registry"] }
+tokio = { version = "1", default-features = false, features = ["rt", "time", "sync", "macros", "signal"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "service", "proxy"] }
+futures-util = { version = "0.3", default-features = false }
+libc = "0.2"
 
 [dev-dependencies]
 age = "0.11.2"
 tempfile = "3.27.0"
-tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }

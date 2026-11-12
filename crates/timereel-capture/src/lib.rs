@@ -68,3 +68,23 @@ pub trait LockSource {
     /// `false`: a wrong guess at worst captures a lock screen (section 5).
     fn is_locked(&self) -> bool;
 }
+
+// Shared sources: a test (or the agent) can keep an `Arc` to a source to look
+// at it while the runner owns another handle.
+impl<T: ScreenSource + ?Sized> ScreenSource for std::sync::Arc<T> {
+    fn capture(&self) -> Result<Vec<Frame>, CaptureError> {
+        (**self).capture()
+    }
+}
+
+impl<T: ActiveWindowSource + ?Sized> ActiveWindowSource for std::sync::Arc<T> {
+    fn active_window(&self) -> ActiveWindow {
+        (**self).active_window()
+    }
+}
+
+impl<T: LockSource + ?Sized> LockSource for std::sync::Arc<T> {
+    fn is_locked(&self) -> bool {
+        (**self).is_locked()
+    }
+}

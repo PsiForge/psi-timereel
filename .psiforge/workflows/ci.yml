@@ -30,6 +30,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
-        run: xvfb-run -a cargo test --workspace
+        run: dbus-run-session -- xvfb-run -a cargo test --workspace
+      - name: Verify the agent systemd unit
+        run: |
+          cargo build -p timereel-agent
+          sudo install -m 755 target/debug/timereel-agent /usr/bin/timereel-agent
+          systemd-analyze --user verify packaging/timereel-agent.service
+          sudo rm /usr/bin/timereel-agent
       - name: Cargo deny
         run: cargo deny check

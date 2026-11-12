@@ -1,0 +1,16 @@
+[Unit]
+Description=TimeReel capture agent
+Documentation=https://github.com/PsiForge/psi-timereel
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/timereel-agent
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+MemoryHigh=64M
+
+[Install]
+WantedBy=graphical-session.target

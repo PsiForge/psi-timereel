@@ -15,7 +15,13 @@ thiserror = "2.0.21"
 timereel-image = { path = "../timereel-image" }
 x11rb = { version = "0.14", default-features = false, features = ["randr"] }
 tracing = "0.1"
+ashpd = { version = "0.14", default-features = false, features = ["tokio", "screencast"] }
+pipewire = "0.10"
+tokio = { version = "1", default-features = false, features = ["rt", "time", "sync"] }
+timereel-config = { version = "0.1.0", path = "../timereel-config" }
 
 
 [dev-dependencies]
+notify = "8"
+tempfile = "3.27.0"
 x11rb = { version = "0.14", default-features = false, features = ["randr"] }

@@ -27,6 +27,7 @@ pub fn solid_frame(x: i32, y: i32, width: u32, height: u32, rgba: [u8; 4]) -> Fr
 pub struct FakeScreen {
     results: Mutex<VecDeque<Result<Vec<Frame>, CaptureError>>>,
     calls: AtomicUsize,
+    retries: AtomicUsize,
 }
 
 impl FakeScreen {
@@ -50,6 +51,7 @@ impl FakeScreen {
         Self {
             results: Mutex::new(results.into()),
             calls: AtomicUsize::new(0),
+            retries: AtomicUsize::new(0),
         }
     }
 
@@ -57,9 +59,18 @@ impl FakeScreen {
     pub fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    /// How many times [`ScreenSource::retry_permission`] was called.
+    pub fn retries(&self) -> usize {
+        self.retries.load(Ordering::SeqCst)
+    }
 }
 
 impl ScreenSource for FakeScreen {
+    fn retry_permission(&self) {
+        self.retries.fetch_add(1, Ordering::SeqCst);
+    }
+
     fn capture(&self) -> Result<Vec<Frame>, CaptureError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let mut q = lock(&self.results);

@@ -358,6 +358,17 @@ fn each_error_kind_sets_its_state_and_reason_and_success_recovers() {
             s.config.clone(),
         ),
         (
+            ErrorKind::PortalTooOld,
+            AgentState::Error,
+            "Screen capture portal is too old: version 4 or later is needed",
+            failing_runner(
+                ok_window(),
+                FakeScreen::failing(CaptureError::PortalTooOld),
+                Box::new(Store::new(s.store.captures_dir().parent().unwrap())),
+            ),
+            s.config.clone(),
+        ),
+        (
             ErrorKind::DiskFull,
             AgentState::Error,
             "Disk full",

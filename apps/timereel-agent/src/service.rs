@@ -71,11 +71,11 @@ impl AgentInterface {
         self.handle.run_retention().await.map_err(failed)
     }
 
-    /// On Wayland, asks for portal permission again. A stub until the portal
-    /// source exists.
+    /// On Wayland, asks for portal permission again and captures at once so
+    /// the portal dialog is shown. Without a permission step it only causes
+    /// an early capture.
     async fn retry_permission(&self) -> fdo::Result<()> {
-        tracing::info!("RetryPermission called; there is no portal source yet");
-        Ok(())
+        self.handle.retry_permission().await.map_err(failed)
     }
 }
 

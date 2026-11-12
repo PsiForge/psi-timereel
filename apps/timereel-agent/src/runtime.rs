@@ -49,6 +49,7 @@ enum Command {
     SetPaused(bool, oneshot::Sender<Result<(), String>>),
     Reload(oneshot::Sender<String>),
     RunRetention(oneshot::Sender<Result<u32, String>>),
+    RetryPermission(oneshot::Sender<()>),
     Wake,
     Shutdown,
 }
@@ -97,6 +98,13 @@ impl AgentHandle {
     /// Runs retention now and returns the number of captures deleted.
     pub async fn run_retention(&self) -> Result<u32, String> {
         self.request(Command::RunRetention).await?
+    }
+
+    /// Asks the screen source to ask for capture permission again and takes
+    /// a capture at once, so the portal dialog shows up now. It returns when
+    /// the request is accepted, not when the capture is done.
+    pub async fn retry_permission(&self) -> Result<(), String> {
+        self.request(Command::RetryPermission).await
     }
 
     /// Tells the loop that the machine woke up from suspend, so it checks the
@@ -247,6 +255,14 @@ impl Core {
                     None => Err(CONFIG_INVALID_REASON.to_string()),
                 };
                 let _ = reply.send(result);
+            }
+            Command::RetryPermission(reply) => {
+                self.runner.retry_permission();
+                // The capture (and the dialog) comes with the next pass of
+                // the loop, after the reply has been sent.
+                self.next_tick = now.unix_ms;
+                tracing::info!("permission retry requested, capturing now");
+                let _ = reply.send(());
             }
             Command::Wake => tracing::info!("woke up from suspend, checking the schedule"),
             Command::Shutdown => {}

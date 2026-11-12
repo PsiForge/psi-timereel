@@ -391,20 +391,25 @@ pub fn load(path: &Path) -> Result<Keyring, KeyError> {
 /// directory, fsync, rename, fsync of the directory. A missing parent
 /// directory is created with mode 0700.
 pub fn save(keyring: &Keyring, path: &Path) -> Result<(), KeyError> {
-    let dir = match path.parent() {
-        Some(d) if !d.as_os_str().is_empty() => d,
-        _ => Path::new("."),
-    };
+    save_with_hook(keyring, path, &|| Ok(()))
+}
+
+/// Replaces the key file like [`save`]. `before_rename` runs after the temp
+/// file is written and fsynced and before the rename; if it fails, the old
+/// file is untouched (this is the failure-injection point for tests).
+fn save_with_hook(
+    keyring: &Keyring,
+    path: &Path,
+    before_rename: &dyn Fn() -> std::io::Result<()>,
+) -> Result<(), KeyError> {
+    let dir = key_dir(path);
     fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(dir)?;
     let json = serde_json::to_vec_pretty(keyring)
         .map_err(|e| KeyError::Crypto(format!("cannot serialize key file: {e}")))?;
-    let name = path
-        .file_name()
-        .ok_or_else(|| std::io::Error::other("key file path has no file name"))?
-        .to_string_lossy();
+    let name = key_file_name(path)?;
     let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
     let result = (|| -> std::io::Result<()> {
         let mut f: File = OpenOptions::new()
@@ -416,6 +421,7 @@ pub fn save(keyring: &Keyring, path: &Path) -> Result<(), KeyError> {
         f.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
         f.write_all(&json)?;
         f.sync_all()?;
+        before_rename()?;
         fs::rename(&tmp, path)?;
         File::open(dir)?.sync_all()
     })();
@@ -423,4 +429,108 @@ pub fn save(keyring: &Keyring, path: &Path) -> Result<(), KeyError> {
         let _ = fs::remove_file(&tmp);
     }
     Ok(result?)
+}
+
+fn key_dir(path: &Path) -> &Path {
+    match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    }
+}
+
+fn key_file_name(path: &Path) -> Result<String, KeyError> {
+    Ok(path
+        .file_name()
+        .ok_or_else(|| std::io::Error::other("key file path has no file name"))?
+        .to_string_lossy()
+        .into_owned())
+}
+
+/// Deletes temp files left behind by a crashed [`save`] or
+/// [`change_password`] (`.<name>.<pid>.tmp` next to the key file). [`load`]
+/// never reads them. Failing to delete one is not an error: it is only
+/// clutter, and the next call tries again.
+fn remove_leftover_temp_files(path: &Path) {
+    let (Ok(name), Ok(entries)) = (key_file_name(path), fs::read_dir(key_dir(path))) else {
+        return;
+    };
+    let prefix = format!(".{name}.");
+    for entry in entries.flatten() {
+        let file = entry.file_name();
+        let file = file.to_string_lossy();
+        if file.starts_with(&prefix)
+            && file.ends_with(".tmp")
+            && entry.file_type().is_ok_and(|t| t.is_file())
+        {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Changes the password by rewriting only the password slot.
+///
+/// `unlocked` is the key opened by the caller (with the current password or
+/// the recovery key, see [`unlock_with_password`] and
+/// [`unlock_with_recovery_key`]). The new slot gets a fresh random salt and
+/// nonce and keeps the Argon2 parameters of the old slot. The public key and
+/// the recovery slot are kept as they are, so captures and the recovery key
+/// are not affected. The file is replaced atomically (see [`save`]); if
+/// anything fails, the old file stays in place and still works. Leftover temp
+/// files of earlier crashes are deleted. Argon2 runs once.
+///
+/// Returns the new key file. Fails with [`KeyError::Crypto`] if `unlocked`
+/// does not belong to the key file at `keyring_path`.
+pub fn change_password(
+    keyring_path: &Path,
+    unlocked: &UnlockedKey,
+    new_password: &SecretString,
+) -> Result<Keyring, KeyError> {
+    change_password_with_hook(keyring_path, unlocked, new_password, &|| Ok(()))
+}
+
+fn change_password_with_hook(
+    keyring_path: &Path,
+    unlocked: &UnlockedKey,
+    new_password: &SecretString,
+    before_rename: &dyn Fn() -> std::io::Result<()>,
+) -> Result<Keyring, KeyError> {
+    let mut keyring = load(keyring_path)?;
+    if unlocked.public_key() != keyring.public_key {
+        return Err(KeyError::Crypto(
+            "the unlocked key does not belong to this key file".into(),
+        ));
+    }
+    let params = keyring.password_slot.params;
+    let salt = random::<SALT_LEN>()?;
+    let nonce = random::<NONCE_LEN>()?;
+    let key = derive_password_key(new_password, &salt, params)?;
+    let secret = unlocked.identity.to_string();
+    let ct = seal(
+        &key,
+        &nonce,
+        &aad(PASSWORD_SLOT, &keyring.public_key),
+        secret.expose_secret().as_bytes(),
+    )?;
+    keyring.password_slot = PasswordSlot {
+        kdf: "argon2id".into(),
+        params,
+        salt: B64.encode(salt),
+        nonce: B64.encode(nonce),
+        ciphertext: B64.encode(ct),
+    };
+    remove_leftover_temp_files(keyring_path);
+    save_with_hook(&keyring, keyring_path, before_rename)?;
+    remove_leftover_temp_files(keyring_path);
+    Ok(keyring)
+}
+
+#[cfg(test)]
+pub(crate) fn change_password_failing_before_rename(
+    keyring_path: &Path,
+    unlocked: &UnlockedKey,
+    new_password: &SecretString,
+) -> Result<Keyring, KeyError> {
+    change_password_with_hook(keyring_path, unlocked, new_password, &|| {
+        Err(std::io::Error::other("injected failure"))
+    })
 }

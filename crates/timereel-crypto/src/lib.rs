@@ -4,6 +4,9 @@
 //! a password slot (Argon2id + XChaCha20-Poly1305) and a recovery slot
 //! (HKDF-SHA256 from a 256-bit recovery key + XChaCha20-Poly1305).
 //!
+//! [`change_password`] rewrites only the password slot and replaces the file
+//! atomically; the recovery slot and the public key stay byte-identical.
+//!
 //! Captures are sealed into the `.trc` container with age ([`seal_capture`],
 //! [`open_part`], [`open_capture`]); see the `container` module for the format.
 //!
@@ -17,6 +20,8 @@ mod policy;
 mod recovery;
 
 #[cfg(test)]
+mod change_password_tests;
+#[cfg(test)]
 mod container_tests;
 #[cfg(test)]
 mod tests;
@@ -28,8 +33,8 @@ pub use container::{
 };
 pub use error::KeyError;
 pub use keyring::{
-    create, load, save, unlock_with_password, unlock_with_recovery_key, KdfParams, Keyring,
-    UnlockedKey,
+    change_password, create, load, save, unlock_with_password, unlock_with_recovery_key, KdfParams,
+    Keyring, UnlockedKey,
 };
 pub use policy::{check_password, PasswordCheck, MIN_PASSWORD_CHARS};
 pub use recovery::RecoveryKey;

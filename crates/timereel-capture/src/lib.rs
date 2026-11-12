@@ -7,7 +7,8 @@
 //! * [`LockSource`]: says whether the screen is locked.
 //!
 //! The X11 implementations are in [`x11`] and the Wayland portal one is in
-//! [`wayland`]; the GNOME extension and logind come in later tickets. The
+//! [`wayland`]; [`gnome`] reads the active window through the bundled GNOME
+//! Shell extension. logind and the ScreenSaver services are in [`lock`]. The
 //! [`fake`] module has scriptable fakes so the agent's skip and error logic can
 //! be tested without a display.
 //!
@@ -16,11 +17,13 @@
 
 pub mod band;
 pub mod fake;
+pub mod gnome;
 pub mod lock;
 mod session;
 pub mod wayland;
 pub mod x11;
 
+pub use gnome::GnomeWindow;
 pub use session::{detect_session, detect_session_with, Session};
 pub use wayland::{ScreencastPortal, WaylandScreen};
 pub use x11::{X11Screen, X11Window};

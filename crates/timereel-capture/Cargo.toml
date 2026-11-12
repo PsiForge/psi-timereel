@@ -26,5 +26,6 @@ futures-util = { version = "0.3", default-features = false }
 notify = "8"
 tempfile = "3.27.0"
 x11rb = { version = "0.14", default-features = false, features = ["randr"] }
-tokio = { version = "1", default-features = false, features = ["rt", "time", "sync", "macros"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync", "macros"] }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+zbus = { version = "6", default-features = false, features = ["tokio", "service", "proxy"] }

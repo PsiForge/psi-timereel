@@ -8,6 +8,7 @@ use timereel_agent::runtime::Core;
 use timereel_agent::sources::screen_and_window;
 use timereel_agent::{logging, logind, service, sys};
 use timereel_capture::lock::DbusLockSource;
+use timereel_capture::Session;
 use timereel_store::Store;
 
 fn main() -> std::process::ExitCode {
@@ -65,7 +66,8 @@ async fn run() -> Result<(), String> {
     let session = timereel_capture::detect_session();
     tracing::info!(session = ?session, "session detected");
     let (screen, window) = screen_and_window(session);
-    let runner = CycleRunner::new(screen, window, Box::new(lock), Box::new(store.clone()));
+    let runner = CycleRunner::new(screen, window, Box::new(lock), Box::new(store.clone()))
+        .warn_on_unknown_app(session == Session::Wayland);
     let (core, handle) = Core::new(Arc::new(SystemClock), runner, store);
 
     service::serve(&bus, handle.clone())

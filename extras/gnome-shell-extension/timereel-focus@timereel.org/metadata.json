@@ -1,0 +1,7 @@
+{
+  "uuid": "timereel-focus@timereel.org",
+  "name": "TimeReel Focus",
+  "description": "Tells TimeReel which app has the focus, over the session bus (org.timereel.Focus1). It never logs window titles.",
+  "shell-version": ["45", "46", "47", "48", "49"],
+  "url": "https://github.com/PsiForge/psi-timereel"
+}

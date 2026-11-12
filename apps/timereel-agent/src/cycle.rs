@@ -25,6 +25,14 @@ use timereel_store::{CaptureMeta, CaptureTime, Store, StoreError};
 /// App name stored when no window has the focus.
 pub const NO_WINDOW_APP: &str = "(none)";
 
+/// The `Reason` shown on Wayland after [`UNKNOWN_APP_LIMIT`] `app-unknown`
+/// skips in a row (architecture section 5).
+pub const APP_UNKNOWN_REASON: &str =
+    "Active app unknown: enable the TimeReel GNOME extension or allow capture when unknown";
+
+/// How many `app-unknown` skips in a row raise the error state on Wayland.
+pub const UNKNOWN_APP_LIMIT: u32 = 3;
+
 /// Linux errno for "No space left on device".
 const ENOSPC: i32 = 28;
 
@@ -228,6 +236,10 @@ pub struct CycleRunner {
     reason: String,
     last_capture_ms: i64,
     last_skip: Option<SkipReason>,
+    /// Whether repeated `app-unknown` skips raise the error state (Wayland).
+    warn_unknown_app: bool,
+    /// `app-unknown` skips in a row.
+    unknown_streak: u32,
 }
 
 impl CycleRunner {
@@ -247,7 +259,19 @@ impl CycleRunner {
             reason: String::new(),
             last_capture_ms: 0,
             last_skip: None,
+            warn_unknown_app: false,
+            unknown_streak: 0,
         }
+    }
+
+    /// On Wayland the active app is only known through the GNOME extension,
+    /// so [`UNKNOWN_APP_LIMIT`] `app-unknown` skips in a row set the error
+    /// state with [`APP_UNKNOWN_REASON`]; the next capture clears it. Off by
+    /// default (on X11 an unknown app is rare and needs no special alarm).
+    #[must_use]
+    pub fn warn_on_unknown_app(mut self, on: bool) -> Self {
+        self.warn_unknown_app = on;
+        self
     }
 
     /// The current state.
@@ -278,6 +302,7 @@ impl CycleRunner {
     /// state as it is (only a success clears it) but end `paused`.
     pub fn run_once(&mut self, config: &Config, now: Now) -> Outcome {
         let outcome = self.cycle(config, now);
+        self.count_unknown_app(outcome);
         match outcome {
             Outcome::Captured(time) => {
                 self.last_capture_ms = time.0;
@@ -291,6 +316,9 @@ impl CycleRunner {
                 } else if self.state == AgentState::Paused {
                     self.set_state(AgentState::Recording, "");
                 }
+                if reason == SkipReason::AppUnknown && self.too_many_unknown() {
+                    self.set_state(AgentState::Error, APP_UNKNOWN_REASON);
+                }
                 tracing::info!(reason = reason.as_str(), "capture skipped");
             }
             Outcome::Failed(kind) => {
@@ -299,6 +327,30 @@ impl CycleRunner {
             }
         }
         outcome
+    }
+
+    /// Keeps the `app-unknown` streak: it grows with each such skip and is
+    /// reset by any cycle that got an answer about the window (a capture, an
+    /// excluded app or a failure after the window was read). `paused` and
+    /// `locked` skips never ask the window source, so they leave it alone.
+    fn count_unknown_app(&mut self, outcome: Outcome) {
+        match outcome {
+            Outcome::Skipped(SkipReason::AppUnknown) => {
+                self.unknown_streak = self.unknown_streak.saturating_add(1);
+            }
+            Outcome::Skipped(SkipReason::Paused | SkipReason::Locked) => {}
+            Outcome::Captured(_) | Outcome::Skipped(SkipReason::Excluded) | Outcome::Failed(_) => {
+                self.unknown_streak = 0;
+            }
+        }
+    }
+
+    /// Whether the streak calls for the error state. A state the user has to
+    /// act on elsewhere (`needs_permission`, `not_set_up`) is not replaced.
+    fn too_many_unknown(&self) -> bool {
+        self.warn_unknown_app
+            && self.unknown_streak >= UNKNOWN_APP_LIMIT
+            && matches!(self.state, AgentState::Recording | AgentState::Error)
     }
 
     /// Brings the state in line with a config that was just read or saved,

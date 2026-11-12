@@ -37,3 +37,5 @@ dbus-run-session -- bash -c 'target/debug/timereel-agent & sleep 1;
 ```
 
 The D-Bus integration tests (`apps/timereel-agent/tests/dbus.rs`) start their own private `dbus-daemon`, so plain `cargo test` works; CI runs them under `dbus-run-session`. Set `TIMEREEL_LOG=debug` for more log lines (the agent logs to the journal, or to stderr if there is no journal). To check the unit file: `systemd-analyze --user verify packaging/timereel-agent.service` (needs `timereel-agent` installed at `/usr/bin`).
+
+The X11 capture tests (`crates/timereel-capture/tests/x11.rs`) start their own private `Xvfb` servers (2560x1080 with two RandR monitors for the capture test), so they need the `xvfb` package but not `xvfb-run`.

@@ -22,6 +22,10 @@ allow = [
   "Unlicense", # ksni (ADR 0003): public-domain dedication, no conditions
   "IJG", # jpeg-encoder (ADR 0011): permissive, BSD-style Independent JPEG Group licence
 ]
+# The fonts that egui (ADR 0002) embeds for its default text. Only this crate, only these licences.
+exceptions = [
+  { allow = ["OFL-1.1", "Ubuntu-font-1.0"], crate = "epaint_default_fonts" },
+]
 
 [bans]
 multiple-versions = "warn"

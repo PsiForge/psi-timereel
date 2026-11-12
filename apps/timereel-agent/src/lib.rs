@@ -6,7 +6,7 @@
 //! * [`service`]: the `org.timereel.Agent1` D-Bus interface;
 //! * [`logind`]: reschedule after suspend;
 //! * [`clock`], [`sources`], [`logging`], [`sys`]: the clock, the real
-//!   (for now unsupported) sources, journal logging and system calls.
+//!   sources (X11 now; Wayland and logind later), journal logging and system calls.
 
 pub mod clock;
 pub mod cycle;

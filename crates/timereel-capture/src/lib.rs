@@ -15,6 +15,7 @@
 
 pub mod band;
 pub mod fake;
+pub mod lock;
 mod session;
 pub mod x11;
 

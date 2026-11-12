@@ -1991,10 +1991,14 @@ version = "0.1.0"
 name = "timereel-capture"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "thiserror 2.0.21",
  "timereel-image",
+ "tokio",
  "tracing",
+ "tracing-subscriber",
  "x11rb",
+ "zbus",
 ]
 
 [[package]]

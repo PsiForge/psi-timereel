@@ -20,6 +20,8 @@ allow = [
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Internal crates refer to each other by path without a version; still deny wildcards from registries.
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"

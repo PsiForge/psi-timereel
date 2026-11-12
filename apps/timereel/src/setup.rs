@@ -4,7 +4,7 @@
 //! Nothing is written until [`install`]. The recovery key only ever lives in
 //! the [`NewKey`] in memory; no function here writes it anywhere.
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -125,8 +125,19 @@ pub fn install(keyring: &Keyring) -> Result<(), SetupError> {
 /// # Errors
 /// Returns a message for the user if the command cannot be started or fails.
 pub fn enable_agent(options: &SetupOptions) -> Result<(), String> {
-    let out = Command::new(&options.systemctl)
-        .args(["--user", "enable", "--now", AGENT_UNIT])
+    systemctl_user(&options.systemctl, &["enable", "--now", AGENT_UNIT])
+}
+
+/// Runs `<program> --user <args...>` and turns a failure into a message for
+/// the user (the exit status and the first part of stderr).
+///
+/// # Errors
+/// Returns the message if the program cannot be started or does not exit with
+/// success.
+pub fn systemctl_user(program: &OsStr, args: &[&str]) -> Result<(), String> {
+    let out = Command::new(program)
+        .arg("--user")
+        .args(args)
         .stdin(Stdio::null())
         .output()
         .map_err(|e| format!("Could not run systemctl: {e}."))?;

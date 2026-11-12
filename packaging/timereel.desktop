@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TimeReel
+GenericName=Screenshot timeline
+Comment=Scroll back through your work day
+Exec=timereel
+Icon=timereel
+Terminal=false
+Categories=Utility;
+Keywords=screenshots;timeline;time tracking;
+StartupWMClass=org.timereel.Viewer

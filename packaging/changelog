@@ -1,0 +1,7 @@
+timereel (0.1.0-1) unstable; urgency=low
+
+  * First .deb: the viewer, the capture agent and the tray, with the systemd
+    user unit, the autostart entry, the GNOME Shell extension and
+    `timereel purge-data`.
+
+ -- TimeReel contributors <noreply@timereel.org>  Thu, 12 Nov 2026 00:00:00 +0000

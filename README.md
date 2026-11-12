@@ -53,3 +53,14 @@ The X11 capture tests (`crates/timereel-capture/tests/x11.rs`) start their own p
 `timereel` (egui/eframe with the glow backend, no persistence, ADR 0002) claims `org.timereel.Viewer1` on the session bus, so only one runs: a second `timereel` calls `Activate` on the first and exits. It turns off core dumps with `prctl(PR_SET_DUMPABLE, 0)`. With no key file (`~/.local/share/timereel/keyring.json`) it opens the set-up: password and confirmation, key creation on a worker thread, the recovery key shown once (no copy button, a tick box is required), then it saves the key file, writes `public_key` to `config.toml` and runs `systemctl --user enable --now timereel-agent.service`. If a key file exists it shows a placeholder until the lock screen arrives. Running it needs `libxkbcommon-x11-0` and an OpenGL driver at run time.
 
 Tests: the set-up pages use `egui_kittest` (headless); the single-instance test starts its own private `dbus-daemon`; the set-up flow tests point `TIMEREEL_*_DIR`, `XDG_CACHE_HOME` and `TMPDIR` at a temp tree and use a fake `systemctl`.
+
+### The .deb and `timereel purge-data`
+
+```
+cargo build --release --workspace && cargo deb -p timereel --no-build   # cargo install cargo-deb --locked
+packaging/check-deb.sh target/debian/timereel_*.deb                     # lintian, apt install, file and unit checks (needs sudo)
+```
+
+The package (ADR 0012) installs the three programs in `/usr/bin`, the user unit `/usr/lib/systemd/user/timereel-agent.service`, the tray autostart entry, the app menu entry, the icon and the GNOME extension. It has no maintainer scripts: installing starts nothing; the viewer's first-run set-up enables the service. `apt remove timereel` removes only the programs.
+
+`timereel purge-data` lists the data, config and state folders (`~/.local/share/timereel`, `~/.config/timereel`, `~/.local/state/timereel`, or the `TIMEREEL_*_DIR` overrides), asks you to type `DELETE`, runs `systemctl --user disable --now timereel-agent.service` and deletes only those folders. It refuses any folder that is not an absolute path ending in `timereel`, and deletes nothing if `systemctl` fails. Run it before `apt remove` (the service has to be known to systemd).

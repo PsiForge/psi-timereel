@@ -1,0 +1,33 @@
+name: Package
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libclang-dev libpipewire-0.3-dev libxkbcommon-dev lintian
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Build the programs and the .deb
+        run: |
+          cargo build --release --workspace
+          cargo deb -p timereel --no-build
+      - name: Lintian, install with apt, check the files and the unit
+        run: packaging/check-deb.sh target/debian/timereel_*.deb

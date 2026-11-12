@@ -1,6 +1,6 @@
 [package]
 name = "timereel"
-description = "TimeReel timereel binary"
+description = "Private, encrypted screenshot timeline"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -26,3 +26,37 @@ libc = "0.2"
 [dev-dependencies]
 egui_kittest = "0.37"
 tempfile = "3.27.0"
+
+# .deb (ADR 0012): `cargo build --release --workspace && cargo deb -p timereel --no-build`.
+# One package holds all three programs. There are no maintainer scripts: nothing
+# starts a service when the package is installed.
+[package.metadata.deb]
+name = "timereel"
+maintainer = "TimeReel contributors <noreply@timereel.org>"
+copyright = "TimeReel contributors"
+changelog = "../../packaging/changelog"
+section = "utils"
+priority = "optional"
+extended-description = """\
+TimeReel takes a small screenshot every few minutes, encrypts it in memory and \
+stores it under your home directory. A viewer lets you unlock the data and \
+scroll back through the day. There is no network access, no server and no \
+account, and no program runs as root.
+.
+The capture agent is a systemd user service that the first-run set-up enables.
+To delete all TimeReel data, run `timereel purge-data` before removing the package."""
+# $auto adds the libraries the binaries link against (for example libpipewire-0.3-0).
+# The others are loaded at run time by the window system and graphics code.
+depends = "$auto, systemd, libpipewire-0.3-0t64 | libpipewire-0.3-0, libxkbcommon-x11-0, libgl1"
+recommends = "xdg-desktop-portal, gnome-shell-extension-appindicator"
+assets = [
+    ["target/release/timereel", "usr/bin/", "755"],
+    ["target/release/timereel-agent", "usr/bin/", "755"],
+    ["target/release/timereel-tray", "usr/bin/", "755"],
+    ["../../packaging/timereel-agent.service", "usr/lib/systemd/user/", "644"],
+    ["../../packaging/timereel-tray.desktop", "etc/xdg/autostart/", "644"],
+    ["../../packaging/timereel.desktop", "usr/share/applications/", "644"],
+    ["../../packaging/icons/timereel.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+    ["../../extras/gnome-shell-extension/timereel-focus@timereel.org/extension.js", "usr/share/gnome-shell/extensions/timereel-focus@timereel.org/", "644"],
+    ["../../extras/gnome-shell-extension/timereel-focus@timereel.org/metadata.json", "usr/share/gnome-shell/extensions/timereel-focus@timereel.org/", "644"],
+]

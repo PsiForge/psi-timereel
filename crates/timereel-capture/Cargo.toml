@@ -13,3 +13,9 @@ workspace = true
 [dependencies]
 thiserror = "2.0.21"
 timereel-image = { path = "../timereel-image" }
+x11rb = { version = "0.14", default-features = false, features = ["randr"] }
+tracing = "0.1"
+
+
+[dev-dependencies]
+x11rb = { version = "0.14", default-features = false, features = ["randr"] }

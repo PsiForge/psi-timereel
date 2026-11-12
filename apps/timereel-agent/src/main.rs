@@ -5,7 +5,7 @@ use std::sync::Arc;
 use timereel_agent::clock::SystemClock;
 use timereel_agent::cycle::CycleRunner;
 use timereel_agent::runtime::Core;
-use timereel_agent::sources::{UnsupportedLock, UnsupportedScreen, UnsupportedWindow};
+use timereel_agent::sources::{screen_and_window, UnsupportedLock};
 use timereel_agent::{logging, logind, service, sys};
 use timereel_store::Store;
 
@@ -47,9 +47,12 @@ fn main() -> std::process::ExitCode {
 
 async fn run() -> Result<(), String> {
     let store = Store::at_default_location().map_err(|e| format!("no data directory: {e}"))?;
+    let session = timereel_capture::detect_session();
+    tracing::info!(session = ?session, "session detected");
+    let (screen, window) = screen_and_window(session);
     let runner = CycleRunner::new(
-        Box::new(UnsupportedScreen::new()),
-        Box::new(UnsupportedWindow),
+        screen,
+        window,
         Box::new(UnsupportedLock::new()),
         Box::new(store.clone()),
     );

@@ -45,3 +45,5 @@ The D-Bus integration tests (`apps/timereel-agent/tests/dbus.rs`) start their ow
 On plain GNOME the icon needs the AppIndicator extension (Ubuntu enables it by default); KDE works as is. Try it with the agent running: `cargo run -p timereel-tray`.
 
 The integration tests in `apps/timereel-tray/tests/dbus.rs` start a private `dbus-daemon` with a fake agent and viewer, and click the menu of the real `timereel-tray` process through `com.canonical.dbusmenu`.
+
+The X11 capture tests (`crates/timereel-capture/tests/x11.rs`) start their own private `Xvfb` servers (2560x1080 with two RandR monitors for the capture test), so they need the `xvfb` package but not `xvfb-run`.

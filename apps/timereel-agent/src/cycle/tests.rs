@@ -451,3 +451,46 @@ fn store_errors_map_to_kinds() {
         ErrorKind::Encryption
     );
 }
+
+/// A screen that records the width it was told to scale to.
+struct WidthSpy {
+    inner: FakeScreen,
+    widths: std::sync::Mutex<Vec<u32>>,
+}
+
+impl ScreenSource for WidthSpy {
+    fn capture(&self) -> Result<Vec<timereel_image::Frame>, CaptureError> {
+        self.inner.capture()
+    }
+
+    fn set_target_width(&self, width: u32) {
+        self.widths.lock().unwrap().push(width);
+    }
+}
+
+#[test]
+fn the_screen_is_told_the_configured_width_before_each_capture() {
+    let s = setup();
+    let spy = Arc::new(WidthSpy {
+        inner: FakeScreen::single_monitor(),
+        widths: std::sync::Mutex::new(Vec::new()),
+    });
+    let mut r = CycleRunner::new(
+        Box::new(spy.clone()),
+        Box::new(FakeWindow::known("Firefox", "Inbox")),
+        Box::new(FakeLock::new(false)),
+        Box::new(Store::new(s.store.captures_dir().parent().unwrap())),
+    );
+    let mut config = s.config.clone();
+    config.width_px = 900;
+    r.run_once(&config, NOW);
+    config.width_px = 1280;
+    r.run_once(
+        &config,
+        Now {
+            unix_ms: T0 + 1000,
+            ..NOW
+        },
+    );
+    assert_eq!(*spy.widths.lock().unwrap(), vec![900, 1280]);
+}

@@ -9,3 +9,13 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+# StatusNotifierItem over D-Bus, pure Rust (ADR 0003). It brings its own zbus 5.
+ksni = "0.3.7"
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy"] }
+tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread", "time", "sync", "macros", "signal", "process"] }
+futures-util = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+zbus = { version = "6", default-features = false, features = ["tokio", "proxy", "service"] }

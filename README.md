@@ -37,3 +37,11 @@ dbus-run-session -- bash -c 'target/debug/timereel-agent & sleep 1;
 ```
 
 The D-Bus integration tests (`apps/timereel-agent/tests/dbus.rs`) start their own private `dbus-daemon`, so plain `cargo test` works; CI runs them under `dbus-run-session`. Set `TIMEREEL_LOG=debug` for more log lines (the agent logs to the journal, or to stderr if there is no journal). To check the unit file: `systemd-analyze --user verify packaging/timereel-agent.service` (needs `timereel-agent` installed at `/usr/bin`).
+
+### The tray
+
+`timereel-tray` shows the agent state in the panel (a StatusNotifierItem through `ksni`, ADR 0003): a green disc while recording, grey bars while paused, red for an error, for `needs_permission` and when the agent is not running. The tooltip shows the reason. The menu has Pause/Resume, Open TimeReel (activates `org.timereel.Viewer1`, or starts `timereel`), Grant capture permission (only when permission is missing) and Quit (asks the viewer to quit and ends the tray; the agent keeps running). It follows the agent through `PropertiesChanged` and `NameOwnerChanged`. Autostart: install `packaging/timereel-tray.desktop` to `/etc/xdg/autostart/`.
+
+On plain GNOME the icon needs the AppIndicator extension (Ubuntu enables it by default); KDE works as is. Try it with the agent running: `cargo run -p timereel-tray`.
+
+The integration tests in `apps/timereel-tray/tests/dbus.rs` start a private `dbus-daemon` with a fake agent and viewer, and click the menu of the real `timereel-tray` process through `com.canonical.dbusmenu`.

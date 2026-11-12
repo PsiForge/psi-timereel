@@ -124,6 +124,8 @@ For tests, environment variables override the paths: `TIMEREEL_DATA_DIR`, `TIMER
 
 All directories are mode 0700 and all files are mode 0600.
 
+The data directory is `$TIMEREEL_DATA_DIR` if set (tests), otherwise `$XDG_DATA_HOME/timereel`, which is `~/.local/share/timereel`. `timereel-store` owns the `captures/` folder inside it; nothing is written outside the data directory (no temp files in `/tmp`) and nothing unencrypted is written anywhere. Day folders and file names use UTC, and the file name is `YYYYMMDDTHHMMSSmmmZ` (milliseconds). A capture is written as `.<name>.partial` in its day folder, fsynced, renamed to `<name>.trc`, and the folder is fsynced. Listing uses file names only and ignores partial files, symlinks and unknown names. The agent removes leftover `.partial` files at start (`Store::cleanup_partials`).
+
 ```
 ~/.local/share/timereel/            ($XDG_DATA_HOME)
   keyring.json                      key file: public key + encrypted private key slots

@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use fs4::FileExt;
 use serde::{Deserialize, Serialize};
 
-pub use fsutil::{create_private_dir_all, DIR_MODE, FILE_MODE};
+pub use fsutil::{create_private_dir_all, create_private_new, sync_dir, DIR_MODE, FILE_MODE};
 pub use paths::{
     config_dir, config_file, data_dir, state_dir, PathError, ENV_CONFIG_DIR, ENV_DATA_DIR,
     ENV_STATE_DIR,

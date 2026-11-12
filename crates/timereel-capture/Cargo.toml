@@ -13,3 +13,11 @@ workspace = true
 [dependencies]
 thiserror = "2.0.21"
 timereel-image = { path = "../timereel-image" }
+tracing = "0.1"
+tokio = { version = "1", default-features = false, features = ["rt", "time", "sync"] }
+zbus = { version = "6", default-features = false, features = ["tokio"] }
+futures-util = { version = "0.3", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["rt", "time", "sync", "macros"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }

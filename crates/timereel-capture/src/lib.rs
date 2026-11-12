@@ -14,6 +14,7 @@
 //! names, so they are safe to log.
 
 pub mod fake;
+pub mod lock;
 
 use timereel_image::Frame;
 

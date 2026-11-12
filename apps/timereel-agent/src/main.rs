@@ -5,8 +5,9 @@ use std::sync::Arc;
 use timereel_agent::clock::SystemClock;
 use timereel_agent::cycle::CycleRunner;
 use timereel_agent::runtime::Core;
-use timereel_agent::sources::{UnsupportedLock, UnsupportedScreen, UnsupportedWindow};
+use timereel_agent::sources::{UnsupportedScreen, UnsupportedWindow};
 use timereel_agent::{logging, logind, service, sys};
+use timereel_capture::lock::DbusLockSource;
 use timereel_store::Store;
 
 fn main() -> std::process::ExitCode {
@@ -47,33 +48,39 @@ fn main() -> std::process::ExitCode {
 
 async fn run() -> Result<(), String> {
     let store = Store::at_default_location().map_err(|e| format!("no data directory: {e}"))?;
+    let session = zbus::Connection::session()
+        .await
+        .map_err(|e| format!("cannot connect to the session bus: {e}"))?;
+    // The system bus serves logind (suspend and lock detection). Without it
+    // the schedule is still right, because it is checked against the wall
+    // clock, and the lock sources fall back to the ScreenSaver services.
+    let system = match zbus::Connection::system().await {
+        Ok(system) => Some(system),
+        Err(e) => {
+            tracing::warn!(error = %e, "no system bus, not following suspend or logind lock");
+            None
+        }
+    };
+    let lock = DbusLockSource::start(system.clone(), Some(session.clone())).await;
     let runner = CycleRunner::new(
         Box::new(UnsupportedScreen::new()),
         Box::new(UnsupportedWindow),
-        Box::new(UnsupportedLock::new()),
+        Box::new(lock),
         Box::new(store.clone()),
     );
     let (core, handle) = Core::new(Arc::new(SystemClock), runner, store);
 
-    let session = zbus::Connection::session()
-        .await
-        .map_err(|e| format!("cannot connect to the session bus: {e}"))?;
     service::serve(&session, handle.clone())
         .await
         .map_err(|e| format!("cannot serve {}: {e}", service::BUS_NAME))?;
 
-    // Suspend detection needs the system bus. Without it the schedule is
-    // still right, because it is checked against the wall clock.
-    match zbus::Connection::system().await {
-        Ok(system) => {
-            let h = handle.clone();
-            tokio::spawn(async move {
-                if let Err(e) = logind::watch_sleep(&system, move || h.notify_resumed()).await {
-                    tracing::warn!(error = %e, "not following logind PrepareForSleep");
-                }
-            });
-        }
-        Err(e) => tracing::warn!(error = %e, "no system bus, not following suspend"),
+    if let Some(system) = system {
+        let h = handle.clone();
+        tokio::spawn(async move {
+            if let Err(e) = logind::watch_sleep(&system, move || h.notify_resumed()).await {
+                tracing::warn!(error = %e, "not following logind PrepareForSleep");
+            }
+        });
     }
 
     let stopper = handle.clone();

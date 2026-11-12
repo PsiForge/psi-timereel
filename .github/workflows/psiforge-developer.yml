@@ -1,4 +1,5 @@
-# Managed by PsiForge. Started by the orchestrator for one approved ticket; opens a pull request.
+# Managed by PsiForge (updated automatically). Started by the orchestrator for one approved ticket,
+# or to rework its open pull request (input `branch`).
 # The job only pushes a branch and reports on the ticket; the orchestrator opens the pull request
 # (pull requests opened with the job's own token would not start CI).
 # Security: the agent step gets no GitHub credentials (checkout does not keep them) and cannot change
@@ -15,6 +16,7 @@ on:
       effort: { description: Effort level, required: true, type: string }
       max_budget_usd: { description: Hard spend limit for this run, required: true, type: string }
       prompt: { description: Instructions for the agent, required: true, type: string }
+      branch: { description: Existing branch to continue (rework), required: false, type: string, default: "" }
 
 permissions:
   contents: write
@@ -30,12 +32,14 @@ jobs:
     env:
       ISSUE: ${{ inputs.issue }}
       ATTEMPT: ${{ inputs.attempt }}
-      BRANCH: psiforge/ticket-${{ inputs.issue }}-a${{ inputs.attempt }}
+      BRANCH: ${{ inputs.branch != '' && inputs.branch || format('psiforge/ticket-{0}-a{1}', inputs.issue, inputs.attempt) }}
+      REWORK: ${{ inputs.branch != '' }}
     steps:
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ inputs.branch != '' && inputs.branch || github.ref }}
 
       - uses: actions/setup-node@v5
         with:
@@ -50,7 +54,7 @@ jobs:
           MAX_BUDGET: ${{ inputs.max_budget_usd }}
           PROMPT: ${{ inputs.prompt }}
         run: |
-          git checkout -b "$BRANCH"
+          if [ "$REWORK" != "true" ]; then git checkout -b "$BRANCH"; fi
           mkdir -p .psiforge
           set +e
           npx -y @anthropic-ai/claude-code@2.1.322 -p "$PROMPT" \
@@ -81,7 +85,7 @@ jobs:
           git config user.email "psiforge-developer@users.noreply.github.com"
           git add -A
           git commit -q -m "$(gh issue view "$ISSUE" --json title --jq .title)" -m "Closes #$ISSUE"
-          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$BRANCH"
+          git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BRANCH"
           echo "made=true" >> "$GITHUB_OUTPUT"
 
       - name: Report on the ticket
@@ -93,7 +97,7 @@ jobs:
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           summary="$( [ -f "$RUNNER_TEMP/pr.md" ] && cat "$RUNNER_TEMP/pr.md" || echo "No summary from the agent." )"
-          if [ "$MADE" = "true" ]; then head="ψ Developer attempt $ATTEMPT pushed \`$BRANCH\` (\$${COST:-0}). The orchestrator opens the pull request."
+          if [ "$MADE" = "true" ]; then head="ψ Developer attempt $ATTEMPT pushed \`$BRANCH\` (\$${COST:-0}). The orchestrator opens or updates the pull request."
           else head="ψ Developer attempt $ATTEMPT made no changes or failed (\$${COST:-0}). Log: $RUN"; fi
           printf '%s\n\n<details><summary>Summary</summary>\n\n%s\n\n</details>\n\n<!-- psiforge:dev-result attempt=%s usd=%s made=%s branch=%s -->\n' \
             "$head" "$summary" "$ATTEMPT" "${COST:-0}" "${MADE:-false}" "$BRANCH" > "$RUNNER_TEMP/comment.md"

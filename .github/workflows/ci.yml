@@ -43,3 +43,17 @@ jobs:
           node --check --input-type=module < "extras/gnome-shell-extension/timereel-focus@timereel.org/extension.js"
       - name: Cargo deny
         run: cargo deny check
+
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libclang-dev libpipewire-0.3-dev libxkbcommon-dev
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Decrypt and decode benchmark (ADR 0013 thresholds)
+        run: cargo run --release -p timereel-bench

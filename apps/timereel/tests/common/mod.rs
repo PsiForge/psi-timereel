@@ -38,7 +38,7 @@ pub fn harness(options: SetupOptions) -> Screen {
 }
 
 /// Types into the password field (0) or the confirmation field (1).
-pub fn type_into(h: &mut Screen, field: usize, text: &str) {
+pub fn type_into<S>(h: &mut Harness<'static, S>, field: usize, text: &str) {
     {
         let nodes = h.get_all_by_role(egui::accesskit::Role::PasswordInput);
         let node = nodes.into_iter().nth(field).expect("password field");
@@ -52,7 +52,7 @@ pub fn type_into(h: &mut Screen, field: usize, text: &str) {
     h.run_steps(2);
 }
 
-pub fn has_label(h: &Screen, label: &str) -> bool {
+pub fn has_label<S>(h: &Harness<'static, S>, label: &str) -> bool {
     h.query_by_label(label).is_some()
 }
 
@@ -65,7 +65,11 @@ pub fn is_disabled(h: &Screen, label: &str) -> bool {
 }
 
 /// Steps the UI until `done` is true (workers run in other threads).
-pub fn wait_until(h: &mut Screen, what: &str, done: impl Fn(&Screen) -> bool) {
+pub fn wait_until<S>(
+    h: &mut Harness<'static, S>,
+    what: &str,
+    done: impl Fn(&Harness<'static, S>) -> bool,
+) {
     let start = Instant::now();
     while !done(h) {
         assert!(
@@ -82,5 +86,51 @@ pub fn submit_password(h: &mut Screen, password: &str) {
     type_into(h, 0, password);
     type_into(h, 1, password);
     h.get_by_label(timereel::setup_ui::CONTINUE_LABEL).click();
+    h.run_steps(2);
+}
+
+/// A key file with the password `password` in `dir`; returns its path and
+/// the recovery key text.
+pub fn make_keyring(dir: &std::path::Path, password: &str) -> (std::path::PathBuf, String) {
+    use timereel_crypto::{create, save, ExposeSecret, SecretString};
+    let (keyring, recovery, _) =
+        create(&SecretString::from(password.to_owned()), FAST_KDF).expect("create");
+    let path = dir.join(timereel::setup::KEYRING_FILE_NAME);
+    save(&keyring, &path).expect("save");
+    (path, recovery.display().expose_secret().to_owned())
+}
+
+pub type ViewerScreen = Harness<'static, timereel::app::Viewer>;
+
+/// A harness around a viewer for the key file at `keyring_path`.
+pub fn viewer_harness(
+    keyring_path: std::path::PathBuf,
+    clock: timereel::autolock::FakeClock,
+) -> ViewerScreen {
+    let options = timereel::app::ViewerOptions {
+        keyring_path,
+        autolock: timereel::autolock::autolock_after(10),
+        clock: Box::new(clock),
+        setup: fast_options("true"),
+    };
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(700.0, 600.0))
+        .build_ui_state(
+            |ui, viewer: &mut timereel::app::Viewer| viewer.ui(ui),
+            timereel::app::Viewer::new(options),
+        );
+    h.run_steps(2);
+    h
+}
+
+/// Types `secret` on the lock screen and presses Unlock.
+pub fn unlock(h: &mut ViewerScreen, secret: &str, recovery: bool) {
+    use timereel::lock_ui::{RECOVERY_TOGGLE_LABEL, UNLOCK_LABEL};
+    if recovery {
+        h.get_by_label(RECOVERY_TOGGLE_LABEL).click();
+        h.run_steps(2);
+    }
+    type_into(h, 0, secret);
+    h.get_by_label(UNLOCK_LABEL).click();
     h.run_steps(2);
 }

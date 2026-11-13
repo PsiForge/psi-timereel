@@ -29,6 +29,12 @@ zbus = { version = "6", default-features = false, features = ["tokio", "proxy", 
 tokio = { version = "1", default-features = false, features = ["rt", "rt-multi-thread"] }
 thiserror = "2.0.21"
 egui = { version = "0.37", default-features = false }
+# Jump to date (T21): the date picker button. Its date type is `jiff::civil::Date`, so jiff
+# is named here only to convert at the button; the timeline crate works in chrono.
+egui_extras = { version = "0.37", default-features = false, features = ["datepicker"] }
+jiff = { version = "0.2", default-features = false, features = ["std"] }
+# `clock` gives the local time zone for the day boundaries.
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock"] }
 zeroize = "1"
 libc = "0.2"
 

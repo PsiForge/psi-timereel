@@ -27,6 +27,14 @@
 //!   clearing, so the same capture stays selected. The query is not logged
 //!   and not stored anywhere but in the view, so locking drops it.
 //!
+//! * Jump controls ([`crate::jump_ui`]): a date picker with hour and minute
+//!   fields and a Go button (`at_or_after`, falling back to the nearest
+//!   capture), and the quick-jump buttons (Today, Yesterday, Previous day,
+//!   Next day, -1 h, +1 h) that use the T18 `quick_jump` query. When the jump
+//!   had to fall back, a message says 'No captures on <date>; showing
+//!   nearest'. The landing gets the highest loader priority (a loader jump)
+//!   and the arrow keys continue from it.
+//!
 //! Nothing here writes to disk.
 
 use std::collections::HashMap;
@@ -40,10 +48,11 @@ use timereel_image::RgbaImage;
 use timereel_store::{CaptureTime, Store};
 use timereel_timeline::{
     format_clock, format_date_time, format_gap, plan_requests, Decoder, ImageLoader, Index, Item,
-    Kind, MetaEntry, MetaSource, MetaStore, SearchFilter, Status, StoreDecoder, StoreMetaSource,
-    StripLayout, PREFETCH_THUMBS, REFRESH_INTERVAL,
+    Kind, MetaEntry, MetaSource, MetaStore, QuickJump, SearchFilter, Status, StoreDecoder,
+    StoreMetaSource, StripLayout, PREFETCH_THUMBS, REFRESH_INTERVAL,
 };
 
+use crate::jump_ui::{JumpAction, JumpControls, SHOWING_NEAREST_SUFFIX};
 use crate::session::Session;
 
 /// Shown instead of the timeline when there are no captures.
@@ -190,6 +199,8 @@ pub struct TimelineView {
     matches_stamp: Option<(usize, usize)>,
     /// The query changed since `matches` was computed.
     query_changed: bool,
+    /// The jump controls and the message of the last jump.
+    jump: JumpControls,
 }
 
 impl TimelineView {
@@ -251,6 +262,7 @@ impl TimelineView {
             matches: Vec::new(),
             matches_stamp: None,
             query_changed: false,
+            jump: JumpControls::new(),
         }
     }
 
@@ -372,19 +384,88 @@ impl TimelineView {
 
     /// Selects `time` (the nearest capture if it is not in the index).
     pub fn select(&mut self, time: CaptureTime) {
+        self.select_with(time, false);
+    }
+
+    /// Selects `time`; with `force_jump` the loader treats it as a jump, so
+    /// the target is loaded before anything else.
+    fn select_with(&mut self, time: CaptureTime, force_jump: bool) {
         let Some(time) = self.index.nearest(time) else {
             return;
         };
-        let far = self.selected.map_or(true, |old| {
-            let (a, b) = (self.position(old), self.position(time));
-            a.abs_diff(b) > PREFETCH_THUMBS
-        });
+        self.jump.set_message(None);
+        let far = force_jump
+            || self.selected.map_or(true, |old| {
+                let (a, b) = (self.position(old), self.position(time));
+                a.abs_diff(b) > PREFETCH_THUMBS
+            });
         if far {
             self.loader.jump(time);
         } else {
             self.loader.set_position(time);
         }
         self.selected = Some(time);
+    }
+
+    /// The jump controls (tests set the date, time zone and clock here).
+    pub fn jump_controls_mut(&mut self) -> &mut JumpControls {
+        &mut self.jump
+    }
+
+    /// The message of the last jump, if it had to fall back to the nearest
+    /// capture.
+    pub fn jump_message(&self) -> Option<&str> {
+        self.jump.message()
+    }
+
+    /// Does what the jump controls ask: selects the landing capture, gives
+    /// it the highest loader priority and sets the message if the jump had
+    /// to fall back to the nearest capture.
+    pub fn jump(&mut self, action: JumpAction) {
+        let Some(current) = self.selected else { return };
+        let zone = self.jump.zone();
+        let (landing, message) = match action {
+            JumpAction::Go => {
+                let Some(target) = self.jump.target_time() else {
+                    return;
+                };
+                let Some(landing) = self.index.at_or_after(target) else {
+                    return;
+                };
+                let date = self.jump.date();
+                let message = if zone.date(landing.time) == date {
+                    None
+                } else if zone.has_captures(&self.index, date) {
+                    Some(format!(
+                        "No captures at or after {:02}:{:02} on {date}",
+                        self.jump.hour(),
+                        self.jump.minute()
+                    ))
+                } else {
+                    Some(format!("No captures on {date}"))
+                };
+                (landing, message)
+            }
+            JumpAction::Quick(kind) => {
+                let now = self.jump.now();
+                let Some(landing) = zone.quick_jump(&self.index, kind, current, now) else {
+                    return;
+                };
+                let message = if landing.exact {
+                    None
+                } else {
+                    Some(match self.jump.target_day(kind, current) {
+                        Some(date) => format!("No captures on {date}"),
+                        None => format!("No captures {}", hour_jump_text(kind)),
+                    })
+                };
+                (landing, message)
+            }
+        };
+        self.select_with(landing.time, true);
+        self.jump.set_fields_from(landing.time);
+        self.jump
+            .set_message(message.map(|m| format!("{m}{SHOWING_NEAREST_SUFFIX}")));
     }
 
     /// Moves the selection by `steps` captures, stopping at the ends. While
@@ -438,6 +519,10 @@ impl TimelineView {
             return;
         }
         self.search_bar(ui);
+        self.jump.follow(self.selected);
+        if let Some(action) = self.jump.show(ui) {
+            self.jump(action);
+        }
         self.update_matches();
         self.handle_input(ui);
         let Some(selected) = self.selected else {
@@ -722,6 +807,13 @@ impl TimelineView {
         if let Some(time) = clicked {
             self.select(time);
         }
+    }
+}
+
+fn hour_jump_text(kind: QuickJump) -> &'static str {
+    match kind {
+        QuickJump::MinusHour => "an hour earlier",
+        _ => "an hour later",
     }
 }
 

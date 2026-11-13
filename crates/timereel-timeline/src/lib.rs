@@ -16,23 +16,35 @@
 //! drops stale jobs after [`ImageLoader::jump`]. [`ImageLoader::lock_hook`]
 //! goes into the viewer's `Session::on_lock`.
 //!
+//! The timeline view (T20) builds on [`StripLayout`] (where each thumbnail is,
+//! so only visible ones are drawn), [`plan_requests`] (which pictures to ask
+//! the loader for), [`MetaCache`] (all metadata, decrypted in the background
+//! and cleared on lock) and the label helpers [`format_clock`],
+//! [`format_date_time`] and [`format_gap`].
+//!
 //! Capture times are UTC milliseconds ([`CaptureTime`]); the day folders on
 //! disk are UTC days too. "Days" in this crate are local days in a time zone
 //! passed in by the caller (any [`chrono::TimeZone`]), so a local day may
 //! span two UTC day folders and may be 23 or 25 hours long on a DST change.
 
+mod format;
 mod gaps;
 mod index;
 mod jump;
 mod loader;
 mod localday;
 mod lru;
+mod meta;
+mod strip;
 
 #[cfg(test)]
 mod loader_tests;
 #[cfg(test)]
+mod strip_tests;
+#[cfg(test)]
 mod tests;
 
+pub use format::{format_clock, format_date_time, format_gap};
 pub use gaps::{find_gaps, Gap, GAP_FACTOR_PERCENT};
 pub use index::{Index, Landing, REFRESH_INTERVAL};
 pub use jump::QuickJump;
@@ -42,4 +54,6 @@ pub use loader::{
 };
 pub use localday::{local_date, local_day_bounds, local_day_start};
 pub use lru::{ByteLru, ByteSize, FULL_CACHE_BYTES, THUMB_CACHE_BYTES};
+pub use meta::{MetaCache, MetaEntry, MetaSource, StoreMetaSource, REPAINT_EVERY};
+pub use strip::{plan_requests, RequestPlan, StripLayout};
 pub use timereel_store::CaptureTime;

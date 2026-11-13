@@ -17,6 +17,10 @@ timereel-crypto = { path = "../../crates/timereel-crypto" }
 timereel-store = { path = "../../crates/timereel-store" }
 # The desktop lock-state source (T12), for lock-on-session-lock.
 timereel-capture = { path = "../../crates/timereel-capture" }
+# The timeline view (T20): index, loader, caches, strip layout, labels.
+timereel-timeline = { path = "../../crates/timereel-timeline" }
+# Decoded pictures (`RgbaImage`) for the timeline textures.
+timereel-image = { path = "../../crates/timereel-image" }
 futures-util = { version = "0.3", default-features = false }
 # GUI (ADR 0002): glow backend; `persistence` stays off so no UI state is written.
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }

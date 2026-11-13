@@ -8,10 +8,11 @@ use std::time::Duration;
 
 use common::*;
 use egui_kittest::kittest::Queryable;
-use timereel::app::{LOCK_LABEL, TIMELINE_PLACEHOLDER};
+use timereel::app::LOCK_LABEL;
 use timereel::autolock::FakeClock;
 use timereel::lock_ui::UNLOCK_LABEL;
 use timereel::settings::*;
+use timereel::timeline_ui::EMPTY_TIMELINE_MESSAGE;
 
 #[test]
 fn settings_open_from_the_unlocked_view_and_the_new_autolock_time_applies() {
@@ -21,7 +22,7 @@ fn settings_open_from_the_unlocked_view_and_the_new_autolock_time_applies() {
     let clock = FakeClock::default();
     let mut h = viewer_harness(env.keyring_path(), clock.clone());
     unlock(&mut h, password, false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 
     h.get_by_label(SETTINGS_LABEL).click();
     h.run_steps(2);
@@ -48,13 +49,13 @@ fn back_returns_to_the_main_view_and_lock_still_works() {
     env.make_keyring(password);
     let mut h = viewer_harness(env.keyring_path(), FakeClock::default());
     unlock(&mut h, password, false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
     h.get_by_label(SETTINGS_LABEL).click();
     h.run_steps(2);
     h.get_by_label(BACK_LABEL).click();
     h.run_steps(2);
     assert!(!h.state().settings_open());
-    assert!(has_label(&h, TIMELINE_PLACEHOLDER));
+    assert!(has_label(&h, EMPTY_TIMELINE_MESSAGE));
 
     h.get_by_label(SETTINGS_LABEL).click();
     h.run_steps(2);

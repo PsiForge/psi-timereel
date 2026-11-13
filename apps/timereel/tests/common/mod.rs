@@ -108,10 +108,14 @@ pub fn viewer_harness(
     clock: timereel::autolock::FakeClock,
 ) -> ViewerScreen {
     let options = timereel::app::ViewerOptions {
-        keyring_path,
+        keyring_path: keyring_path.clone(),
         autolock: timereel::autolock::autolock_after(10),
         clock: Box::new(clock),
         setup: fast_options("true"),
+        timeline: timereel::timeline_ui::TimelineOptions {
+            store: timereel_store::Store::new(keyring_path.parent().expect("data dir")),
+            interval: Duration::from_secs(300),
+        },
     };
     let mut h = Harness::builder()
         .with_size(egui::vec2(700.0, 600.0))

@@ -5,7 +5,7 @@
 //! `timereel purge-data` lives in [`purge`].
 //!
 //! After set-up the viewer shows the lock screen ([`lock_ui`]); an unlock
-//! creates a [`session::Session`]. The timeline is still a placeholder.
+//! creates a [`session::Session`] and the timeline ([`timeline_ui`]).
 
 pub mod agent_client;
 pub mod app;
@@ -19,3 +19,4 @@ pub mod setup;
 pub mod setup_ui;
 pub mod single;
 pub mod sys;
+pub mod timeline_ui;

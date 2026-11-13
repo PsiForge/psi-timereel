@@ -15,9 +15,10 @@ use crate::settings::{SettingsOptions, SettingsScreen, BACK_LABEL, SETTINGS_LABE
 use crate::setup::{self, SetupOptions};
 use crate::setup_ui::{SetupScreen, SetupStatus};
 use crate::single::{Command, Primary};
+use crate::timeline_ui::{TimelineOptions, TimelineView};
 
-/// The text shown where the timeline will be (later tickets).
-pub const TIMELINE_PLACEHOLDER: &str = "The timeline comes in a later version.";
+use timereel_crypto::UnlockedKey;
+
 /// The button that locks the viewer.
 pub const LOCK_LABEL: &str = "Lock";
 /// The longest the UI sleeps while unlocked, so a lock change is seen soon.
@@ -33,6 +34,8 @@ pub struct ViewerOptions {
     pub clock: Box<dyn Clock>,
     /// Used when set-up runs.
     pub setup: SetupOptions,
+    /// Where the timeline finds the captures.
+    pub timeline: TimelineOptions,
 }
 
 impl ViewerOptions {
@@ -50,6 +53,7 @@ impl ViewerOptions {
             autolock: autolock_after(minutes),
             clock: Box::new(SystemClock),
             setup: SetupOptions::default(),
+            timeline: TimelineOptions::from_env()?,
         })
     }
 }
@@ -59,7 +63,23 @@ enum Screen {
     Locked(LockScreen),
     /// After a recovery-key unlock: offer a new password.
     NewPassword(NewPasswordScreen),
-    Unlocked(Session),
+    Unlocked(Box<UnlockedState>),
+}
+
+/// Everything that exists only while unlocked. Dropping it frees the
+/// textures; the session's hooks clear the caches and the metadata.
+struct UnlockedState {
+    session: Session,
+    timeline: TimelineView,
+}
+
+impl UnlockedState {
+    fn new(key: UnlockedKey, options: &TimelineOptions, ctx: &egui::Context) -> Box<Self> {
+        let timeline = TimelineView::open(options, &key, ctx);
+        let mut session = Session::new(key);
+        timeline.register_lock_hooks(&mut session);
+        Box::new(Self { session, timeline })
+    }
 }
 
 /// The viewer without the window around it.
@@ -138,7 +158,15 @@ impl Viewer {
     /// The unlocked session, for the timeline to register its hooks with.
     pub fn session_mut(&mut self) -> Option<&mut Session> {
         match &mut self.screen {
-            Screen::Unlocked(session) => Some(session),
+            Screen::Unlocked(state) => Some(&mut state.session),
+            _ => None,
+        }
+    }
+
+    /// The timeline while unlocked.
+    pub fn timeline(&self) -> Option<&TimelineView> {
+        match &self.screen {
+            Screen::Unlocked(state) => Some(&state.timeline),
             _ => None,
         }
     }
@@ -154,8 +182,8 @@ impl Viewer {
             &mut self.screen,
             Screen::Locked(LockScreen::new(self.options.keyring_path.clone())),
         );
-        if let Screen::Unlocked(mut session) = old {
-            session.lock();
+        if let Screen::Unlocked(mut state) = old {
+            state.session.lock();
         }
     }
 
@@ -201,16 +229,20 @@ impl Viewer {
                             key,
                         ))
                     } else {
-                        Screen::Unlocked(Session::new(key))
+                        Screen::Unlocked(UnlockedState::new(key, &self.options.timeline, ui.ctx()))
                     });
                 }
             }
             Screen::NewPassword(offer) => {
                 if let Some(key) = offer.ui(ui) {
-                    next = Some(Screen::Unlocked(Session::new(key)));
+                    next = Some(Screen::Unlocked(UnlockedState::new(
+                        key,
+                        &self.options.timeline,
+                        ui.ctx(),
+                    )));
                 }
             }
-            Screen::Unlocked(_) => {
+            Screen::Unlocked(state) => {
                 if let Some(settings) = &mut self.settings {
                     let mut back = false;
                     ui.horizontal(|ui| {
@@ -232,7 +264,7 @@ impl Viewer {
                         open = ui.button(SETTINGS_LABEL).clicked();
                         lock = ui.button(LOCK_LABEL).clicked();
                     });
-                    ui.label(TIMELINE_PLACEHOLDER);
+                    state.timeline.ui(ui);
                     if open {
                         match self.keyring_settings() {
                             Ok(settings) => self.settings = Some(settings),

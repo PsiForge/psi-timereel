@@ -18,9 +18,15 @@
 //!
 //! The timeline view (T20) builds on [`StripLayout`] (where each thumbnail is,
 //! so only visible ones are drawn), [`plan_requests`] (which pictures to ask
-//! the loader for), [`MetaCache`] (all metadata, decrypted in the background
+//! the loader for), [`MetaStore`] (all metadata, decrypted in the background
 //! and cleared on lock) and the label helpers [`format_clock`],
 //! [`format_date_time`] and [`format_gap`].
+//!
+//! Search (T22): [`SearchFilter`] is a case-insensitive substring test on the
+//! app name and the window title, applied to what the [`MetaStore`] has
+//! loaded so far ([`MetaStore::matches`], [`MetaStore::matching`]);
+//! [`Index::next_matching`] and [`Index::prev_matching`] move within the
+//! matches. [`MetaStore::progress`] tells how far the loading is.
 //!
 //! Capture times are UTC milliseconds ([`CaptureTime`]); the day folders on
 //! disk are UTC days too. "Days" in this crate are local days in a time zone
@@ -35,10 +41,13 @@ mod loader;
 mod localday;
 mod lru;
 mod meta;
+mod search;
 mod strip;
 
 #[cfg(test)]
 mod loader_tests;
+#[cfg(test)]
+mod search_tests;
 #[cfg(test)]
 mod strip_tests;
 #[cfg(test)]
@@ -54,6 +63,7 @@ pub use loader::{
 };
 pub use localday::{local_date, local_day_bounds, local_day_start};
 pub use lru::{ByteLru, ByteSize, FULL_CACHE_BYTES, THUMB_CACHE_BYTES};
-pub use meta::{MetaCache, MetaEntry, MetaSource, StoreMetaSource, REPAINT_EVERY};
+pub use meta::{MetaEntry, MetaSource, MetaStore, StoreMetaSource, REPAINT_EVERY};
+pub use search::SearchFilter;
 pub use strip::{plan_requests, RequestPlan, StripLayout};
 pub use timereel_store::CaptureTime;

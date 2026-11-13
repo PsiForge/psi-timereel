@@ -13,10 +13,19 @@
 //! * While the full image loads, the thumbnail is shown scaled up.
 //! * Left/right arrow keys and the mouse wheel move the selection; so does
 //!   a click on a thumbnail.
-//! * The labels come from [`timereel_timeline::MetaCache`], decrypted in the
+//! * The labels come from [`timereel_timeline::MetaStore`], decrypted in the
 //!   background. Its lock hook and the loader's are registered with the
 //!   [`Session`] ([`TimelineView::register_lock_hooks`]), and dropping the
 //!   view frees the GPU textures, so locking clears everything.
+//!
+//! * Search: a box above the timeline filters the strip with a
+//!   [`timereel_timeline::SearchFilter`] (case-insensitive substring of the
+//!   app name or window title) on the metadata loaded so far, and the arrow
+//!   keys, the wheel and the step buttons move from match to match. While the
+//!   details are still being read the UI shows the progress. Clearing the box
+//!   shows the full timeline again; the selection is never changed by the
+//!   clearing, so the same capture stays selected. The query is not logged
+//!   and not stored anywhere but in the view, so locking drops it.
 //!
 //! Nothing here writes to disk.
 
@@ -31,8 +40,8 @@ use timereel_image::RgbaImage;
 use timereel_store::{CaptureTime, Store};
 use timereel_timeline::{
     format_clock, format_date_time, format_gap, plan_requests, Decoder, ImageLoader, Index, Item,
-    Kind, MetaCache, MetaEntry, MetaSource, Status, StoreDecoder, StoreMetaSource, StripLayout,
-    PREFETCH_THUMBS, REFRESH_INTERVAL,
+    Kind, MetaEntry, MetaSource, MetaStore, SearchFilter, Status, StoreDecoder, StoreMetaSource,
+    StripLayout, PREFETCH_THUMBS, REFRESH_INTERVAL,
 };
 
 use crate::session::Session;
@@ -51,6 +60,16 @@ pub const FULL_IMAGE_TEXT: &str = "Screenshot";
 pub const THUMB_IMAGE_TEXT: &str = "Screenshot (loading, showing the thumbnail)";
 /// The prefix of a thumbnail's accessible label (followed by the time).
 pub const CAPTURE_LABEL_PREFIX: &str = "Capture ";
+/// The hint of the empty search box (also its accessible name).
+pub const SEARCH_HINT: &str = "Search app or window title";
+/// The prefix of the progress text while the details are being read.
+pub const LOADING_PROGRESS_PREFIX: &str = "Reading details: ";
+/// Shown when the search finds nothing in what is loaded so far.
+pub const NO_MATCHES_MESSAGE: &str = "No matches";
+/// The suffix of the match count (preceded by the number).
+pub const MATCHES_SUFFIX: &str = " matches";
+/// The label of the button that clears the search.
+pub const CLEAR_SEARCH_LABEL: &str = "Clear search";
 /// The prefix of a gap marker's text (followed by the length).
 pub const GAP_LABEL_PREFIX: &str = "Gap: ";
 
@@ -150,7 +169,7 @@ pub struct TimelineView {
     interval: Duration,
     layout: StripLayout,
     loader: ImageLoader,
-    meta: MetaCache,
+    meta: MetaStore,
     selected: Option<CaptureTime>,
     thumbs: TextureCache,
     full: TextureCache,
@@ -161,6 +180,16 @@ pub struct TimelineView {
     offset_hint: i32,
     visible: std::ops::Range<usize>,
     error: Option<String>,
+    /// The text in the search box.
+    query: String,
+    filter: SearchFilter,
+    /// The captures that match `filter`, oldest first (only while filtering).
+    matches: Vec<CaptureTime>,
+    /// `(metadata loaded, captures)` when `matches` was computed; `None`
+    /// forces a new computation.
+    matches_stamp: Option<(usize, usize)>,
+    /// The query changed since `matches` was computed.
+    query_changed: bool,
 }
 
 impl TimelineView {
@@ -195,7 +224,7 @@ impl TimelineView {
     ) -> Self {
         let (repaint_loader, repaint_meta) = (ctx.clone(), ctx.clone());
         let loader = ImageLoader::new(decoder, move || repaint_loader.request_repaint());
-        let meta = MetaCache::new(meta_source, move || repaint_meta.request_repaint());
+        let meta = MetaStore::new(meta_source, move || repaint_meta.request_repaint());
         meta.queue(index.times().iter().rev().copied().collect());
         let selected = index.last();
         if let Some(t) = selected {
@@ -217,6 +246,11 @@ impl TimelineView {
             offset_hint: 0,
             visible: 0..0,
             error: None,
+            query: String::new(),
+            filter: SearchFilter::new(""),
+            matches: Vec::new(),
+            matches_stamp: None,
+            query_changed: false,
         }
     }
 
@@ -229,6 +263,86 @@ impl TimelineView {
     pub fn register_lock_hooks<K>(&self, session: &mut Session<K>) {
         session.on_lock(self.loader.lock_hook());
         session.on_lock(self.meta.lock_hook());
+    }
+
+    /// The text in the search box.
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    /// Sets the search text, as typing in the box does. An empty text shows
+    /// the full timeline again; the selection stays as it is, except that a
+    /// capture that does not match the new query moves to the nearest match.
+    pub fn set_query(&mut self, query: &str) {
+        self.query = query.to_owned();
+        self.apply_query();
+    }
+
+    fn apply_query(&mut self) {
+        self.filter = SearchFilter::new(&self.query);
+        self.matches_stamp = None;
+        self.query_changed = true;
+    }
+
+    /// Whether a non-empty search is active.
+    pub fn is_filtering(&self) -> bool {
+        !self.filter.is_empty()
+    }
+
+    /// The captures the strip shows: the matches while searching, otherwise
+    /// all of them.
+    pub fn shown_times(&self) -> &[CaptureTime] {
+        if self.is_filtering() {
+            &self.matches
+        } else {
+            self.index.times()
+        }
+    }
+
+    /// Computes the matches again if the query, the loaded metadata or the
+    /// index changed, and lays out the strip for what is shown.
+    fn update_matches(&mut self) {
+        let stamp = (self.meta.len(), self.index.len());
+        let needed = self.query_changed
+            || self.matches_stamp.is_none()
+            || (self.is_filtering() && self.matches_stamp != Some(stamp));
+        if !needed {
+            return;
+        }
+        let query_changed = std::mem::take(&mut self.query_changed);
+        if self.is_filtering() {
+            self.matches = self.meta.matching(self.index.times(), &self.filter);
+            if query_changed {
+                if let Some(sel) = self.selected {
+                    if self.matches.binary_search(&sel).is_err() {
+                        if let Some(near) = nearest_in(&self.matches, sel) {
+                            self.select(near);
+                        }
+                    }
+                }
+            }
+        } else {
+            self.matches = Vec::new();
+        }
+        self.matches_stamp = Some(stamp);
+        self.layout = self.layout_for_shown();
+    }
+
+    /// The strip layout of the shown captures. Break markers only make sense
+    /// in the full timeline, so a search lays out without them.
+    fn layout_for_shown(&self) -> StripLayout {
+        let interval = if self.is_filtering() {
+            Duration::from_secs(u64::from(u32::MAX))
+        } else {
+            self.interval
+        };
+        StripLayout::new(
+            self.shown_times(),
+            interval,
+            THUMB_SIZE.x,
+            GAP_WIDTH,
+            SPACING,
+        )
     }
 
     /// The selected capture.
@@ -252,7 +366,7 @@ impl TimelineView {
     }
 
     /// The metadata held so far (for tests and the lock check).
-    pub fn meta(&self) -> &MetaCache {
+    pub fn meta(&self) -> &MetaStore {
         &self.meta
     }
 
@@ -273,9 +387,29 @@ impl TimelineView {
         self.selected = Some(time);
     }
 
-    /// Moves the selection by `steps` captures, stopping at the ends.
+    /// Moves the selection by `steps` captures, stopping at the ends. While
+    /// searching it moves from match to match, skipping the others.
     pub fn step(&mut self, steps: isize) {
         let Some(sel) = self.selected else { return };
+        if self.is_filtering() {
+            let mut at = sel;
+            for _ in 0..steps.unsigned_abs() {
+                let keep = |t| self.meta.matches(t, &self.filter);
+                let found = if steps > 0 {
+                    self.index.next_matching(at, keep)
+                } else {
+                    self.index.prev_matching(at, keep)
+                };
+                match found {
+                    Some(t) => at = t,
+                    None => break,
+                }
+            }
+            if at != sel {
+                self.select(at);
+            }
+            return;
+        }
         let to = self
             .position(sel)
             .saturating_add_signed(steps)
@@ -285,8 +419,9 @@ impl TimelineView {
         }
     }
 
+    /// The position of `time` among the shown captures (where it would be).
     fn position(&self, time: CaptureTime) -> usize {
-        self.index.times().partition_point(|t| *t < time)
+        self.shown_times().partition_point(|t| *t < time)
     }
 
     /// Draws the timeline and handles its input.
@@ -302,6 +437,8 @@ impl TimelineView {
             ui.label(EMPTY_TIMELINE_MESSAGE);
             return;
         }
+        self.search_bar(ui);
+        self.update_matches();
         self.handle_input(ui);
         let Some(selected) = self.selected else {
             return;
@@ -315,6 +452,37 @@ impl TimelineView {
             self.large_view(ui, selected);
         });
         self.strip(ui, selected);
+    }
+
+    /// The search box, the match count and the loading progress.
+    fn search_bar(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            let edit = ui.add(
+                egui::TextEdit::singleline(&mut self.query)
+                    .hint_text(SEARCH_HINT)
+                    .desired_width(280.0),
+            );
+            if edit.changed() {
+                self.apply_query();
+            }
+            let escape = edit.has_focus() && ui.input(|i| i.key_pressed(Key::Escape));
+            if self.is_filtering() {
+                if ui.button(CLEAR_SEARCH_LABEL).clicked() || escape {
+                    self.set_query("");
+                }
+                let found = self.matches.len();
+                if found == 0 {
+                    ui.label(NO_MATCHES_MESSAGE);
+                } else {
+                    ui.label(format!("{found}{MATCHES_SUFFIX}"));
+                }
+            }
+            let (done, total) = self.meta.progress();
+            if done < total {
+                ui.spinner();
+                ui.label(format!("{LOADING_PROGRESS_PREFIX}{done} / {total}"));
+            }
+        });
     }
 
     /// Picks up new captures once a minute.
@@ -332,7 +500,8 @@ impl TimelineView {
                 let times = self.index.times();
                 let new = times.get(before.min(times.len())..).unwrap_or_default();
                 self.meta.queue(new.iter().rev().copied().collect());
-                self.layout = Self::layout_of(&self.index, self.interval);
+                self.matches_stamp = None;
+                self.layout = self.layout_for_shown();
                 self.selected = self.selected.or_else(|| self.index.last());
             }
             Err(e) => self.error = Some(format!("The captures cannot be listed: {e}")),
@@ -340,10 +509,12 @@ impl TimelineView {
     }
 
     fn handle_input(&mut self, ui: &egui::Ui) {
+        // The arrow keys belong to the search box while it has the focus.
+        let typing = ui.ctx().egui_wants_keyboard_input();
         let (left, right, scroll) = ui.input_mut(|i| {
             (
-                i.consume_key(Modifiers::NONE, Key::ArrowLeft),
-                i.consume_key(Modifiers::NONE, Key::ArrowRight),
+                !typing && i.consume_key(Modifiers::NONE, Key::ArrowLeft),
+                !typing && i.consume_key(Modifiers::NONE, Key::ArrowRight),
                 i.smooth_scroll_delta,
             )
         });
@@ -436,8 +607,8 @@ impl TimelineView {
     /// images for the selection and its prefetch neighbours.
     fn request_prefetch(&self, selected: CaptureTime) {
         let at = self.position(selected);
-        let plan = plan_requests(at..at + 1, at, self.index.len());
-        for t in &self.index.times()[plan.full] {
+        let plan = plan_requests(at..at + 1, at, self.shown_times().len());
+        for t in &self.shown_times()[plan.full] {
             self.loader.request(Kind::Full, *t);
         }
     }
@@ -449,8 +620,8 @@ impl TimelineView {
         let scroll_x = self.layout.center(at) - width / 2.0;
         let visible = self.layout.visible(scroll_x, width);
         self.visible = visible.clone();
-        let plan = plan_requests(visible.clone(), at, self.index.len());
-        for t in &self.index.times()[plan.thumbs] {
+        let plan = plan_requests(visible.clone(), at, self.shown_times().len());
+        for t in &self.shown_times()[plan.thumbs] {
             self.loader.request(Kind::Thumb, *t);
         }
 
@@ -460,7 +631,7 @@ impl TimelineView {
         strip_ui.set_clip_rect(strip.intersect(ui.clip_rect()));
         let ui = &mut strip_ui;
 
-        let times: Vec<CaptureTime> = self.index.times()[visible.clone()].to_vec();
+        let times: Vec<CaptureTime> = self.shown_times()[visible.clone()].to_vec();
         for (n, time) in times.into_iter().enumerate() {
             let i = visible.start + n;
             let x = strip.left() + self.layout.left(i) - scroll_x;
@@ -551,5 +722,17 @@ impl TimelineView {
         if let Some(time) = clicked {
             self.select(time);
         }
+    }
+}
+
+/// The element of `times` (sorted) closest in time to `t`; the earlier one on
+/// a tie.
+fn nearest_in(times: &[CaptureTime], t: CaptureTime) -> Option<CaptureTime> {
+    let i = times.partition_point(|x| *x < t);
+    let after = times.get(i).copied();
+    let before = i.checked_sub(1).and_then(|i| times.get(i)).copied();
+    match (before, after) {
+        (Some(b), Some(a)) => Some(if t.0 - b.0 <= a.0 - t.0 { b } else { a }),
+        (b, a) => b.or(a),
     }
 }

@@ -174,7 +174,7 @@ fn metadata_is_loaded_in_the_background_and_repaints() {
     let source = fake(Some(CaptureTime(5 * MIN)));
     let repaints = Arc::new(AtomicUsize::new(0));
     let r = Arc::clone(&repaints);
-    let cache = MetaCache::new(source.clone(), move || {
+    let cache = MetaStore::new(source.clone(), move || {
         r.fetch_add(1, Ordering::SeqCst);
     });
     let t = times(150);
@@ -200,7 +200,7 @@ fn metadata_is_loaded_in_the_background_and_repaints() {
 #[test]
 fn the_lock_hook_empties_the_cache_and_stops_the_worker() {
     let source = fake(None);
-    let cache = MetaCache::new(source.clone(), || {});
+    let cache = MetaStore::new(source.clone(), || {});
     cache.queue(times(10));
     wait_for("loaded", || cache.len() == 10);
     let hook = cache.lock_hook();
@@ -219,7 +219,7 @@ fn the_lock_hook_empties_the_cache_and_stops_the_worker() {
 fn locking_during_a_batch_leaves_nothing_behind() {
     let source = fake(None);
     let gate = source.gate.lock().unwrap();
-    let cache = MetaCache::new(source.clone(), || {});
+    let cache = MetaStore::new(source.clone(), || {});
     cache.queue(times(50));
     std::thread::sleep(Duration::from_millis(30));
     let hook = cache.lock_hook();

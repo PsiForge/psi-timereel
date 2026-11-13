@@ -1,18 +1,18 @@
 //! The decrypted metadata of every capture, loaded in the background.
 //!
-//! After unlock the viewer calls [`MetaCache::queue`] with the capture times
+//! After unlock the viewer calls [`MetaStore::queue`] with the capture times
 //! (newest first is best, as the newest are on screen first). One worker
 //! thread reads and decrypts each capture's metadata through a
 //! [`MetaSource`] (about 1 ms each) and calls the repaint callback every
 //! [`REPAINT_EVERY`] entries and at the end of a batch.
 //!
 //! The cache is meant to be held by the viewer's `Session`: the closure from
-//! [`MetaCache::lock_hook`] goes into `Session::on_lock`; it empties the map,
+//! [`MetaStore::lock_hook`] goes into `Session::on_lock`; it empties the map,
 //! stops the worker and, with it, drops the source and its key. The cache
 //! writes nothing to disk.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
@@ -64,6 +64,10 @@ pub enum MetaEntry {
 struct Shared {
     map: Mutex<HashMap<CaptureTime, MetaEntry>>,
     closed: AtomicBool,
+    /// Captures handed to [`MetaStore::queue`] so far.
+    total: AtomicUsize,
+    /// Captures the worker has dealt with (loaded, failed or already known).
+    done: AtomicUsize,
 }
 
 impl Shared {
@@ -74,17 +78,19 @@ impl Shared {
     fn close(&self) {
         self.closed.store(true, Ordering::SeqCst);
         self.map().clear();
+        self.total.store(0, Ordering::SeqCst);
+        self.done.store(0, Ordering::SeqCst);
     }
 }
 
 /// The metadata of all captures, filled by a background thread.
-pub struct MetaCache {
+pub struct MetaStore {
     shared: Arc<Shared>,
     batches: Option<Sender<Vec<CaptureTime>>>,
     worker: Option<JoinHandle<()>>,
 }
 
-impl MetaCache {
+impl MetaStore {
     /// Starts the worker. `on_repaint` is called from the worker thread.
     pub fn new(source: Arc<dyn MetaSource>, on_repaint: impl Fn() + Send + 'static) -> Self {
         let shared = Arc::new(Shared::default());
@@ -98,6 +104,7 @@ impl MetaCache {
                         return;
                     }
                     if worker_shared.map().contains_key(&time) {
+                        worker_shared.done.fetch_add(1, Ordering::SeqCst);
                         continue;
                     }
                     // A panic in a source must not kill the viewer.
@@ -115,6 +122,7 @@ impl MetaCache {
                     }
                     map.insert(time, entry);
                     drop(map);
+                    worker_shared.done.fetch_add(1, Ordering::SeqCst);
                     since_repaint += 1;
                     if since_repaint >= REPAINT_EVERY {
                         since_repaint = 0;
@@ -136,9 +144,30 @@ impl MetaCache {
     /// already loaded are skipped. Does nothing after a lock.
     pub fn queue(&self, times: Vec<CaptureTime>) {
         if let Some(tx) = &self.batches {
+            let count = times.len();
+            // Count first, so that `done` never overtakes `total`.
+            self.shared.total.fetch_add(count, Ordering::SeqCst);
             // The worker only ends after a lock; then there is nothing to do.
-            let _ = tx.send(times);
+            if tx.send(times).is_err() {
+                self.shared.total.fetch_sub(count, Ordering::SeqCst);
+            }
         }
+    }
+
+    /// How far the background decryption is: `(done, total)` over all
+    /// captures queued so far. The UI shows this while `done < total`;
+    /// searching works on the part already loaded.
+    pub fn progress(&self) -> (usize, usize) {
+        // Read `done` first so that it can never exceed `total`.
+        let done = self.shared.done.load(Ordering::SeqCst);
+        let total = self.shared.total.load(Ordering::SeqCst);
+        (done.min(total), total)
+    }
+
+    /// Whether every queued capture has been dealt with.
+    pub fn is_complete(&self) -> bool {
+        let (done, total) = self.progress();
+        done >= total
     }
 
     /// The metadata of `time`, if it has been read.
@@ -164,7 +193,7 @@ impl MetaCache {
     }
 }
 
-impl Drop for MetaCache {
+impl Drop for MetaStore {
     fn drop(&mut self) {
         self.shared.close();
         self.batches = None;

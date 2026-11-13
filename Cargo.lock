@@ -4174,6 +4174,14 @@ dependencies = [
 [[package]]
 name = "timereel-bench"
 version = "0.1.0"
+dependencies = [
+ "age",
+ "tempfile",
+ "timereel-crypto",
+ "timereel-image",
+ "timereel-store",
+ "timereel-timeline",
+]
 
 [[package]]
 name = "timereel-capture"

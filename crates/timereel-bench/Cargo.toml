@@ -1,6 +1,6 @@
 [package]
 name = "timereel-bench"
-description = "TimeReel bench crate (placeholder)"
+description = "TimeReel decrypt and decode benchmark with CI thresholds (ADR 0013)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,3 +9,15 @@ rust-version.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+age = "0.11.2"
+tempfile = "3.27.0"
+timereel-crypto = { path = "../timereel-crypto" }
+timereel-image = { path = "../timereel-image" }
+timereel-store = { path = "../timereel-store" }
+timereel-timeline = { path = "../timereel-timeline" }
+
+[[bin]]
+name = "timereel-bench"
+path = "src/main.rs"

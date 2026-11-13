@@ -4145,6 +4145,7 @@ dependencies = [
  "timereel-capture",
  "timereel-config",
  "timereel-crypto",
+ "timereel-store",
  "tokio",
  "zbus 6.2.1",
  "zeroize",

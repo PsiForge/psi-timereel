@@ -7,11 +7,12 @@ use std::time::Duration;
 
 use common::*;
 use egui_kittest::kittest::Queryable;
-use timereel::app::{LOCK_LABEL, TIMELINE_PLACEHOLDER};
+use timereel::app::LOCK_LABEL;
 use timereel::autolock::FakeClock;
 use timereel::lock_ui::{
     NEW_PASSWORD_OFFER, NOT_NOW_LABEL, SET_PASSWORD_LABEL, UNLOCK_LABEL, WRONG_SECRET_MESSAGE,
 };
+use timereel::timeline_ui::EMPTY_TIMELINE_MESSAGE;
 
 const PASSWORD: &str = "correct horse battery";
 
@@ -29,7 +30,7 @@ fn a_wrong_password_shows_the_generic_message_and_the_right_one_unlocks() {
     assert!(h.state().is_locked());
 
     unlock(&mut h, PASSWORD, false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
     assert!(h.state().is_unlocked());
     assert!(!has_label(&h, WRONG_SECRET_MESSAGE));
 }
@@ -59,7 +60,7 @@ fn a_recovery_unlock_offers_a_new_password_that_then_unlocks() {
     type_into(&mut h, 0, new_password);
     type_into(&mut h, 1, new_password);
     h.get_by_label(SET_PASSWORD_LABEL).click();
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 
     h.get_by_label(LOCK_LABEL).click();
     h.run_steps(2);
@@ -70,7 +71,7 @@ fn a_recovery_unlock_offers_a_new_password_that_then_unlocks() {
         has_label(h, WRONG_SECRET_MESSAGE)
     });
     unlock(&mut h, new_password, false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 }
 
 #[test]
@@ -81,7 +82,7 @@ fn not_now_skips_the_offer() {
     unlock(&mut h, &recovery, true);
     wait_until(&mut h, "offer", |h| has_label(h, NEW_PASSWORD_OFFER));
     h.get_by_label(NOT_NOW_LABEL).click();
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 }
 
 #[test]
@@ -91,7 +92,7 @@ fn no_input_for_the_autolock_time_locks_the_viewer() {
     let clock = FakeClock::default();
     let mut h = viewer_harness(path, clock.clone());
     unlock(&mut h, PASSWORD, false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 
     clock.advance(Duration::from_secs(9 * 60));
     h.run_steps(2);

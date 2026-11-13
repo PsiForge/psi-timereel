@@ -9,9 +9,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use common::*;
-use timereel::app::TIMELINE_PLACEHOLDER;
 use timereel::autolock::FakeClock;
 use timereel::lockwatch::LockWatch;
+use timereel::timeline_ui::EMPTY_TIMELINE_MESSAGE;
 use zbus::object_server::SignalEmitter;
 use zbus::{connection, interface, Connection};
 
@@ -90,7 +90,7 @@ fn a_session_lock_signal_locks_the_viewer() {
     let mut h = viewer_harness(path, FakeClock::default());
     h.state_mut().attach_lock_watch(watch);
     unlock(&mut h, "correct horse battery", false);
-    wait_until(&mut h, "timeline", |h| has_label(h, TIMELINE_PLACEHOLDER));
+    wait_until(&mut h, "timeline", |h| has_label(h, EMPTY_TIMELINE_MESSAGE));
 
     // The watch may not be subscribed yet: send until the viewer locks.
     let start = Instant::now();

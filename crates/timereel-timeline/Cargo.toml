@@ -12,8 +12,11 @@ workspace = true
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+age = "0.11.2"
+timereel-image = { path = "../timereel-image" }
 timereel-store = { path = "../timereel-store" }
 
 [dev-dependencies]
 chrono-tz = "0.10.4"
+notify = "8.2.0"
 tempfile = "3.27.0"

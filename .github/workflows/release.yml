@@ -1,0 +1,75 @@
+name: Release
+
+# Started by hand (Actions → Release → Run workflow). Builds the .deb from the chosen branch,
+# checks it like the Package job, and publishes it as a GitHub release tagged v<version>.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (empty = the workspace version in Cargo.toml)
+        required: false
+        default: ""
+      prerelease:
+        description: Mark as pre-release (not yet tested on a real machine)
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work out the version and check the tag is free
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="${INPUT_VERSION:-$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || { echo "::error::bad version '$version'"; exit 1; }
+          if gh release view "v$version" >/dev/null 2>&1; then echo "::error::release v$version already exists"; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libclang-dev libpipewire-0.3-dev libxkbcommon-dev lintian
+      - name: Install Rust toolchain (from rust-toolchain.toml)
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - name: Build the programs and the .deb
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cargo build --release --workspace
+          cargo deb -p timereel --no-build --deb-version "$VERSION"
+      - name: Lintian, install with apt, check the files and the unit
+        run: packaging/check-deb.sh target/debian/timereel_*.deb
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          cd target/debian
+          deb="$(ls timereel_*.deb)"
+          sha256sum "$deb" > "$deb.sha256"
+          flag=""; [ "$PRERELEASE" = "true" ] && flag="--prerelease"
+          gh release create "v$VERSION" "$deb" "$deb.sha256" $flag \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "TimeReel $VERSION" \
+            --notes "TimeReel $VERSION for Ubuntu/Debian (amd64), built from ${GITHUB_SHA::7}.
+
+          Install: \`sudo apt install ./$deb\`, then start **TimeReel** from the app menu for the first set-up.
+          Check the download: \`sha256sum -c $deb.sha256\`.
+          See the README for the recovery key, Wayland permission and uninstalling."

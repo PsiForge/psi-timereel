@@ -13,6 +13,8 @@ workspace = true
 [dependencies]
 timereel-config = { path = "../../crates/timereel-config" }
 timereel-crypto = { path = "../../crates/timereel-crypto" }
+# Settings: the retention count for the confirmation (T07).
+timereel-store = { path = "../../crates/timereel-store" }
 # The desktop lock-state source (T12), for lock-on-session-lock.
 timereel-capture = { path = "../../crates/timereel-capture" }
 futures-util = { version = "0.3", default-features = false }

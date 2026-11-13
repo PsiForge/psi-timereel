@@ -11,6 +11,7 @@ use crate::autolock::{autolock_after, Clock, IdleTimer, SystemClock};
 use crate::lock_ui::{LockScreen, NewPasswordScreen, Unlocked};
 use crate::lockwatch::LockWatch;
 use crate::session::Session;
+use crate::settings::{SettingsOptions, SettingsScreen, BACK_LABEL, SETTINGS_LABEL};
 use crate::setup::{self, SetupOptions};
 use crate::setup_ui::{SetupScreen, SetupStatus};
 use crate::single::{Command, Primary};
@@ -68,6 +69,8 @@ pub struct Viewer {
     idle: IdleTimer,
     primary: Option<Primary>,
     lock_watch: Option<LockWatch>,
+    /// The Settings screen while it is open. Dropped on lock.
+    settings: Option<SettingsScreen>,
 }
 
 impl Viewer {
@@ -85,6 +88,7 @@ impl Viewer {
             idle,
             primary: None,
             lock_watch: None,
+            settings: None,
         }
     }
 
@@ -106,6 +110,18 @@ impl Viewer {
         if let Some(watch) = &self.lock_watch {
             watch.attach(ctx);
         }
+    }
+
+    /// Opens the Settings screen. It needs an unlocked session.
+    pub fn open_settings(&mut self, settings: SettingsScreen) {
+        if matches!(self.screen, Screen::Unlocked(_)) {
+            self.settings = Some(settings);
+        }
+    }
+
+    /// True while the Settings screen is shown.
+    pub fn settings_open(&self) -> bool {
+        self.settings.is_some()
     }
 
     /// True while the lock screen is shown.
@@ -133,6 +149,7 @@ impl Viewer {
         if !self.is_unlocked() {
             return;
         }
+        self.settings = None;
         let old = std::mem::replace(
             &mut self.screen,
             Screen::Locked(LockScreen::new(self.options.keyring_path.clone())),
@@ -194,11 +211,35 @@ impl Viewer {
                 }
             }
             Screen::Unlocked(_) => {
-                ui.horizontal(|ui| {
-                    ui.heading("TimeReel");
-                    lock = ui.button(LOCK_LABEL).clicked();
-                });
-                ui.label(TIMELINE_PLACEHOLDER);
+                if let Some(settings) = &mut self.settings {
+                    let mut back = false;
+                    ui.horizontal(|ui| {
+                        back = ui.button(BACK_LABEL).clicked();
+                        lock = ui.button(LOCK_LABEL).clicked();
+                    });
+                    if let Some(config) = settings.ui(ui) {
+                        // A saved auto-lock time applies at once.
+                        self.options.autolock = autolock_after(config.ui_autolock_minutes);
+                        self.idle = IdleTimer::new(self.options.autolock, now);
+                    }
+                    if back {
+                        self.settings = None;
+                    }
+                } else {
+                    let mut open = false;
+                    ui.horizontal(|ui| {
+                        ui.heading("TimeReel");
+                        open = ui.button(SETTINGS_LABEL).clicked();
+                        lock = ui.button(LOCK_LABEL).clicked();
+                    });
+                    ui.label(TIMELINE_PLACEHOLDER);
+                    if open {
+                        match self.keyring_settings() {
+                            Ok(settings) => self.settings = Some(settings),
+                            Err(e) => eprintln!("timereel: cannot open the settings: {e}"),
+                        }
+                    }
+                }
             }
         }
         if let Some(next) = next {
@@ -208,6 +249,12 @@ impl Viewer {
         if lock {
             self.lock();
         }
+    }
+
+    fn keyring_settings(&self) -> Result<SettingsScreen, timereel_config::PathError> {
+        Ok(SettingsScreen::new(SettingsOptions::from_env(
+            self.options.keyring_path.clone(),
+        )?))
     }
 
     fn handle_commands(&mut self, ui: &egui::Ui) {

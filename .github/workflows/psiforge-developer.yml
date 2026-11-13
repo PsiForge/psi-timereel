@@ -45,6 +45,14 @@ jobs:
         with:
           node-version: 24
 
+      - name: Create the branch on GitHub
+        # Pushed before the agent runs: GitHub checks a new branch against the current default branch, so a
+        # workflow file activated on main meanwhile would make the later push look like a workflow change.
+        if: inputs.branch == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git push -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"
+
       - name: Run the developer agent
         id: agent
         env:

@@ -11,6 +11,11 @@
 //! * [`Index::quick_jump`] for the jump buttons ([`QuickJump`]).
 //! * [`Index::gaps`] and [`find_gaps`]: breaks longer than 1.5 x the interval.
 //!
+//! The background loader ([`ImageLoader`]) decrypts and decodes pictures on
+//! worker threads into byte-limited caches ([`ByteLru`]); a generation counter
+//! drops stale jobs after [`ImageLoader::jump`]. [`ImageLoader::lock_hook`]
+//! goes into the viewer's `Session::on_lock`.
+//!
 //! Capture times are UTC milliseconds ([`CaptureTime`]); the day folders on
 //! disk are UTC days too. "Days" in this crate are local days in a time zone
 //! passed in by the caller (any [`chrono::TimeZone`]), so a local day may
@@ -19,13 +24,22 @@
 mod gaps;
 mod index;
 mod jump;
+mod loader;
 mod localday;
+mod lru;
 
+#[cfg(test)]
+mod loader_tests;
 #[cfg(test)]
 mod tests;
 
 pub use gaps::{find_gaps, Gap, GAP_FACTOR_PERCENT};
 pub use index::{Index, Landing, REFRESH_INTERVAL};
 pub use jump::QuickJump;
+pub use loader::{
+    default_workers, Decoder, ImageLoader, Item, Kind, Loaded, LockHandle, Status, StoreDecoder,
+    MAX_WORKERS, PREFETCH_FULL, PREFETCH_THUMBS,
+};
 pub use localday::{local_date, local_day_bounds, local_day_start};
+pub use lru::{ByteLru, ByteSize, FULL_CACHE_BYTES, THUMB_CACHE_BYTES};
 pub use timereel_store::CaptureTime;

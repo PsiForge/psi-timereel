@@ -4262,9 +4262,12 @@ dependencies = [
 name = "timereel-timeline"
 version = "0.1.0"
 dependencies = [
+ "age",
  "chrono",
  "chrono-tz",
+ "notify",
  "tempfile",
+ "timereel-image",
  "timereel-store",
 ]
 

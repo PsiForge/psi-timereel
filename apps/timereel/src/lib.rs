@@ -10,6 +10,7 @@
 pub mod agent_client;
 pub mod app;
 pub mod autolock;
+pub mod jump_ui;
 pub mod lock_ui;
 pub mod lockwatch;
 pub mod purge;

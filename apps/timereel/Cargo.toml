@@ -13,6 +13,9 @@ workspace = true
 [dependencies]
 timereel-config = { path = "../../crates/timereel-config" }
 timereel-crypto = { path = "../../crates/timereel-crypto" }
+# The desktop lock-state source (T12), for lock-on-session-lock.
+timereel-capture = { path = "../../crates/timereel-capture" }
+futures-util = { version = "0.3", default-features = false }
 # GUI (ADR 0002): glow backend; `persistence` stays off so no UI state is written.
 eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
 # Single instance over the session bus (`org.timereel.Viewer1`). Blocking API: no async runtime needed.
